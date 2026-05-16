@@ -93,17 +93,24 @@ Milestone 1 runtime controls are now in place: stop conditions, timeout checks,
 cancellation token support, budget placeholders, message/action/observation
 types, mock model adapter boundary, and monitorable run status.
 
-Next implementation focus: finish Milestone 2 tool loop integration into
-`AgentLoop`, wire workflow pause/resume records into the generic trace schema,
-and design the remaining Milestone 4 SQLcl execution/provisioning apply path.
-Persistent workflow
-approval/resume and real target-system writes must remain closed until signed
-or hashed checkpoint persistence, approval authorization, idempotency, and
-replay protection are designed. Real ADW execution must remain closed until
-SQLcl credential passing, timeouts, result limits, and audit redaction are
-specified and tested. Real admin provisioning apply must also remain closed
-until idempotency checks, compensation behavior, and redacted audit events are
-implemented.
+Next implementation focus is now captured in
+`docs/tracking/next-work-queue.md` so work can continue after context reset.
+The active parallel wave is:
+
+- Worker A: tool loop integration into `AgentLoop`.
+- Worker B: workflow trace and trusted checkpoint/resume safety.
+- Worker C: Oracle ADW SQLcl read-only execution design, with real execution
+  still closed.
+- Worker D: compact schema context plan for Oracle ADW natural-language
+  analysis.
+
+Persistent workflow approval/resume and real target-system writes must remain
+closed until signed or hashed checkpoint persistence, approval authorization,
+idempotency, and replay protection are designed. Real ADW execution must remain
+closed until SQLcl credential passing, timeouts, result limits, and audit
+redaction are specified and tested. Real admin provisioning apply must also
+remain closed until idempotency checks, compensation behavior, and redacted
+audit events are implemented.
 
 Recommended starting point:
 
@@ -160,6 +167,7 @@ Oracle ADW test run covered 19 tests and passed. The latest workflow smoke retur
 - Read `AGENTS.md`.
 - Read this file.
 - Read `docs/tracking/todo.md`.
+- Read `docs/tracking/next-work-queue.md`.
 - For Oracle ADW work, open `agent_runtime/oracle_adw.py` and
   `tests/test_oracle_adw.py` first.
 - Check local git state with:

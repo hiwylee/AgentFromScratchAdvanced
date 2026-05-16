@@ -158,6 +158,8 @@ Acceptance criteria:
 
 ## Ongoing Harness Work
 
+- `[~]` Execute the active parallel wave in
+  `docs/tracking/next-work-queue.md`.
 - `[ ]` Move completed exec plans to `docs/exec-plans/completed/`.
 - `[ ]` Record durable decisions in `docs/tracking/decisions.md`.
 - `[ ]` Update `docs/tracking/change-log.md` after meaningful changes.

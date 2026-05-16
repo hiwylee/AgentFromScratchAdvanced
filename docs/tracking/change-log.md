@@ -104,3 +104,6 @@ direction and implementation changes, not every tiny edit.
   uppercase result keys from schema profile rows.
 - Chose `SH` as the first natural-language DB analysis dataset and `SSB` as
   the later benchmark/stress dataset.
+- Added `docs/tracking/next-work-queue.md` as the durable handoff queue for the
+  next parallel implementation wave, with worker scopes, safety gates, and
+  verification commands.
