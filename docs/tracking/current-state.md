@@ -27,14 +27,14 @@ Oracle ADW natural-language data access as the first domain specialization.
   intent-first agent foundation with audit traces and minimal Oracle ADW
   read-only connectivity, not full autonomous NL-to-SQL.
 - Started Milestone 1 implementation as a uv-managed Python 3.12+ prototype:
-  `agent ask <text>` now emits structured intent, trace output, and append-only
-  audit records.
+  `agent ask <text>` now emits structured intent, monitorable run status,
+  event output, and append-only audit records.
 
 ## Next Action
 
-Continue Milestone 1 by turning the prototype into a fuller agent loop:
-message/action/observation types, a mock model adapter boundary, stop
-conditions, cancellation/timeouts, and budget placeholders.
+Continue Milestone 1 by tightening stop conditions, cancellation/timeouts, and
+budget enforcement. Message/action/observation/final-answer types, mock model
+adapter boundary, and monitorable run status now exist.
 
 Recommended starting point:
 
@@ -52,8 +52,10 @@ Recommended starting point:
 
 ```bash
 UV_CACHE_DIR=.uv-cache uv run --python 3.12 python -m unittest discover -s tests
-bin/agent ask "지난달 상품별 매출 추이를 보여줘" --trace-dir /tmp/afs-traces-312 --audit-log /tmp/afs-audit-312.jsonl
-UV_CACHE_DIR=.uv-cache uv run --python 3.12 python -m agent_runtime ask "고객 테이블에서 오래된 데이터를 삭제해줘" --trace-dir /tmp/afs-traces-block --audit-log /tmp/afs-audit-block.jsonl
+bin/agent ask "지난달 상품별 매출 추이를 보여줘" --run-dir /tmp/afs-runs-1 --audit-log /tmp/afs-audit-1.jsonl
+bin/agent ask "고객 테이블에서 오래된 데이터를 삭제해줘" --run-dir /tmp/afs-runs-2 --audit-log /tmp/afs-audit-2.jsonl
+bin/agent status --run-dir /tmp/afs-runs-1
+bin/agent status --run-dir /tmp/afs-runs-2
 ```
 
 All commands passed.

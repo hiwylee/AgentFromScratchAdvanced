@@ -20,9 +20,9 @@ class RunRecord:
     data: Dict[str, Any]
 
     @classmethod
-    def create(cls, event: str, data: Dict[str, Any]) -> "RunRecord":
+    def create(cls, event: str, data: Dict[str, Any], run_id: str | None = None) -> "RunRecord":
         return cls(
-            run_id=str(uuid4()),
+            run_id=run_id or str(uuid4()),
             created_at=datetime.now(timezone.utc).isoformat(),
             event=event,
             data=redact(data),

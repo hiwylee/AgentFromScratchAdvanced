@@ -27,3 +27,6 @@ direction and implementation changes, not every tiny edit.
 - Started Milestone 1 with a uv-managed Python 3.12+ prototype. Added `agent ask`,
   structured intent analysis, trace/audit output, redaction helpers, artifact
   files, and initial `unittest` coverage.
+- Expanded Milestone 1 with core message/action/observation/final-answer types,
+  a mock model adapter, an `AgentLoop`, budget placeholders, run status files,
+  and `agent status` for local monitoring.

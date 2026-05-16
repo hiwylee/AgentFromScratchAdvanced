@@ -6,6 +6,9 @@ from pathlib import Path
 
 from agent_runtime.audit import RunRecord, append_audit, write_trace
 from agent_runtime.intent import analyze_user_intent
+from agent_runtime.loop import AgentLoop
+from agent_runtime.monitor import latest_status
+from agent_runtime.types import Budget
 
 
 class IntentTests(unittest.TestCase):
@@ -69,6 +72,42 @@ class AuditTests(unittest.TestCase):
                 os.environ.pop("DB_USER_PASS", None)
             else:
                 os.environ["DB_USER_PASS"] = previous
+
+
+class AgentLoopTests(unittest.TestCase):
+    def test_agent_loop_writes_monitorable_status(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            loop = AgentLoop(
+                run_root=tmp_path / "runs",
+                audit_path=tmp_path / "audit.jsonl",
+                budget=Budget(max_steps=4, timeout_seconds=30),
+            )
+
+            result = loop.run("지난달 상품별 매출 추이를 보여줘")
+
+            self.assertEqual("database_analysis", result.intent["intent_type"])
+            self.assertEqual("ask_clarification", result.action["kind"])
+            self.assertTrue(Path(result.status_path).exists())
+            self.assertTrue(Path(result.events_path).exists())
+            self.assertTrue(Path(result.audit_path).exists())
+
+            status = latest_status(tmp_path / "runs")
+            self.assertIsNotNone(status)
+            assert status is not None
+            self.assertEqual("completed", status["state"])
+            self.assertGreaterEqual(status["event_count"], 5)
+
+    def test_agent_loop_blocks_write_intent(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            loop = AgentLoop(run_root=tmp_path / "runs", audit_path=tmp_path / "audit.jsonl")
+
+            result = loop.run("고객 테이블에서 오래된 데이터를 삭제해줘")
+
+            self.assertEqual("blocked_write_request", result.intent["safety_level"])
+            self.assertEqual("refuse", result.action["kind"])
+            self.assertIn("read-only", result.final_answer["content"])
 
 
 if __name__ == "__main__":

@@ -64,6 +64,12 @@ or:
 bin/agent ask "지난달 상품별 매출 추이를 보여줘"
 ```
 
+Monitor the latest run with:
+
+```bash
+bin/agent status
+```
+
 Run tests with:
 
 ```bash

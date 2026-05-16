@@ -35,16 +35,17 @@
 ## Milestone 1: Minimal Agent Loop
 
 - `[x]` Create the first executable package.
-- `[ ]` Define message, action, observation, and final-answer types.
+- `[x]` Define message, action, observation, and final-answer types.
 - `[x]` Define structured user intent types.
-- `[ ]` Implement a mock model adapter.
-- `[ ]` Implement the basic agent loop and stop conditions.
+- `[x]` Implement a mock model adapter.
+- `[~]` Implement the basic agent loop and stop conditions.
 - `[x]` Add append-only audit event recording.
 - `[ ]` Add cancellation and timeout primitives.
-- `[ ]` Add token, cost, row, and latency budget placeholders.
+- `[x]` Add token, cost, row, and latency budget placeholders.
 - `[x]` Add focused tests for intent and redaction behavior.
 - `[x]` Add a CLI entry point for structured intent analysis.
 - `[x]` Verify the prototype through `uv run --python 3.12`.
+- `[x]` Add monitorable run status via `agent status`.
 
 Acceptance criteria:
 
