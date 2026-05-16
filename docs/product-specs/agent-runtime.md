@@ -6,10 +6,10 @@ Build a local agent runtime that starts simple and becomes capable of handling
 complex development tasks through explicit planning, controlled tools, memory,
 and verification.
 
-The first product specialization is natural-language access to database data:
-the agent should help users inspect schemas, ask questions in plain language,
-generate safe queries, explain results, and iterate without requiring the user
-to write SQL by hand.
+The first product specialization is natural-language access to Oracle
+Autonomous Data Warehouse data: the agent should help users inspect schemas,
+ask questions in plain language, generate safe queries, explain results, and
+iterate without requiring the user to write SQL by hand.
 
 ## Initial User Experience
 
@@ -32,7 +32,7 @@ It should show the steps it takes, tool calls it performs, and the final answer.
 7. Memory: project-local notes and reusable guidance.
 8. Harness hardening: policy checks, fixtures, regression tests, and evals.
 9. Complex work: long-running task orchestration and subtask decomposition.
-10. Database natural language workflows: schema grounding, SQL planning,
+10. Oracle ADW natural-language workflows: schema grounding, SQL planning,
     query validation, result explanation, and domain-specific memory.
 
 ## Non-Goals For The First Version
@@ -51,12 +51,12 @@ It should show the steps it takes, tool calls it performs, and the final answer.
 - The state transitions are inspectable.
 - The design leaves room for real model and tool adapters.
 
-## Database Specialization Direction
+## Oracle ADW Specialization Direction
 
-Database work should be introduced as a first-class capability, not as a generic
-shell shortcut. The runtime should eventually include:
+Oracle ADW work should be introduced as a first-class capability, not as a
+generic shell shortcut. The runtime should eventually include:
 
-- connectors for local or configured database sources;
+- an Oracle ADW connector using SQLcl and environment variables;
 - schema introspection and sampled metadata;
 - natural-language-to-query planning with explicit assumptions;
 - read-only query execution by default;

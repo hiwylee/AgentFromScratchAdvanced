@@ -16,9 +16,10 @@ testable agent loop that can:
 The project will grow from that loop into planning, sandboxed execution, memory,
 multi-step workflows, and stronger verification.
 
-The first domain specialization is natural-language access to database data:
-schema-aware question answering, safe query generation, result explanation, and
-evaluation fixtures for natural-language-to-SQL behavior.
+The first domain specialization is natural-language access to Oracle Autonomous
+Data Warehouse data: schema-aware question answering, safe query generation,
+result explanation, and evaluation fixtures for natural-language-to-SQL
+behavior.
 
 ## Repository Map
 
@@ -28,10 +29,23 @@ evaluation fixtures for natural-language-to-SQL behavior.
 - `docs/exec-plans/active/`: current implementation plans.
 - `docs/references/`: notes from `../codex` and external references.
 
+## Local Database Configuration
+
+Local Oracle ADW credentials are read from `.env`, which is intentionally
+ignored by git. Passwords, wallet passwords, API keys, wallet files, and
+secret-bearing connection strings must not be printed or committed.
+
+SQLcl is expected at:
+
+```text
+/home/opc/.local/share/sqlcl/sqlcl/bin/sql
+```
+
 ## First Discussion Topics
 
 - Runtime language and packaging.
 - Minimum tool interface.
 - Whether the first model adapter should be mocked, API-backed, or both.
 - What "done" means for milestone 1.
-- Which database dialect should be supported first.
+- How much Oracle ADW metadata and sample data can safely be exposed to the
+  model.

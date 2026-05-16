@@ -1,0 +1,22 @@
+# Local secrets and database credentials
+.env
+.env.*
+!.env.example
+
+# Oracle wallet material
+*.sso
+*.p12
+*.jks
+tnsnames.ora
+sqlnet.ora
+ojdbc.properties
+wallet/
+Wallet_*/
+
+# Local runtime output
+.agent/
+docs/generated/
+
+# Editor and OS noise
+.DS_Store
+*.swp

@@ -2,12 +2,13 @@
 
 ## Objective
 
-Make the agent strong at answering questions over database data while keeping
+Make the agent strong at answering questions over Oracle ADW data while keeping
 query generation inspectable, safe, and testable.
 
 ## Initial Capability Shape
 
-The first database workflow should be read-only:
+The first database workflow should target Oracle Autonomous Data Warehouse and
+should be read-only:
 
 1. inspect available data sources;
 2. introspect schema and relationships;
@@ -25,6 +26,10 @@ The first database workflow should be read-only:
 - Require explicit approval before any future write-capable mode.
 - Apply row limits and timeouts even for read queries.
 - Keep query text, parameters, and result summaries in state for auditability.
+- Never print `.env` values for passwords, wallet passwords, API keys, or
+  secret-bearing connection strings.
+- Use `DB_USER` / `DB_USER_PASS` for normal query work. Use admin credentials
+  only for explicit setup or metadata tasks.
 
 ## Harness Requirements
 
@@ -35,7 +40,7 @@ The first database workflow should be read-only:
 
 ## Open Decisions
 
-- First database target: SQLite, PostgreSQL, or Oracle.
+- First SQL execution path: direct Oracle driver or SQLcl subprocess.
 - Whether to use an existing SQL parser for validation.
 - How much sample data can be exposed to the model.
 - Whether domain glossary memory is configured manually or learned from usage.

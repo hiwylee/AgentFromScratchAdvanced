@@ -11,14 +11,16 @@ The runtime should be split into narrow interfaces:
 - `Policy`: decides whether an action is allowed.
 - `Reporter`: emits progress updates and final output.
 
-Database-focused capabilities should be modeled as dedicated components rather
-than ad hoc shell commands:
+Oracle ADW-focused capabilities should be modeled as dedicated components
+rather than ad hoc shell commands:
 
 - `DataSourceRegistry`: configured database connections and metadata.
 - `SchemaContext`: compact schema, relationship, and sample-value context.
 - `QueryPlanner`: natural language to candidate query plans.
 - `QueryPolicy`: read/write safety, row limits, and approval boundaries.
 - `ResultInterpreter`: turns rows into grounded natural-language answers.
+- `OracleAdwConnector`: loads environment configuration, checks SQLcl, and
+  executes approved read-only queries.
 
 ## First Implementation Bias
 
@@ -44,4 +46,5 @@ Do not copy structure before confirming that the complexity is needed here.
 - Model provider abstraction.
 - Tool schema format.
 - Test strategy for model-driven behavior.
-- Database connector priority and supported SQL dialects.
+- Whether the first Oracle execution backend uses SQLcl subprocesses or a
+  direct driver.

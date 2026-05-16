@@ -26,6 +26,11 @@ This repository is for building an agent runtime from scratch while using
 - Keep early implementations boring and observable.
 - Do not introduce a framework until the plain version exposes real pressure.
 - Every milestone should have a runnable command and a focused verification path.
+- Treat `.env`, Oracle wallet files, passwords, API keys, and connection strings
+  as secrets. Never print them, commit them, or include them in logs.
+- For Oracle ADW work, use environment variables for credentials and prefer the
+  working DB user over admin credentials unless the task explicitly requires
+  admin access.
 - When referencing `../codex`, document the concept being borrowed and why it
   fits this project before implementing it.
 - Put stable project instructions here. Put detailed, evolving work plans in
@@ -39,4 +44,5 @@ Read these first:
 2. `docs/design-docs/harness-engineering.md`
 3. `docs/design-docs/architecture.md`
 4. `docs/design-docs/database-natural-language.md`
-5. `docs/exec-plans/active/0001-project-bootstrap.md`
+5. `docs/design-docs/oracle-adw-connection.md`
+6. `docs/exec-plans/active/0001-project-bootstrap.md`

@@ -12,7 +12,8 @@ Use `../codex` as a source of ideas and tradeoffs.
 - `../codex/codex-rs/`: Rust runtime implementation.
 - `../codex/sdk/typescript/`: SDK shape and tests.
 - `../kidi_nl2sql/`: local reference for natural-language-to-SQL workflows,
-  evaluation material, and database-specific interaction patterns.
+  evaluation material, Oracle/ADW context, and database-specific interaction
+  patterns.
 
 ## Extraction Rule
 
