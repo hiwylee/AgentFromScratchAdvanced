@@ -27,7 +27,16 @@ behavior.
 - `docs/product-specs/`: what the agent should do and not do.
 - `docs/design-docs/`: architecture and tradeoff records.
 - `docs/exec-plans/active/`: current implementation plans.
+- `docs/tracking/`: current state, todo list, decisions, and change log.
 - `docs/references/`: notes from `../codex` and external references.
+
+## Resume Point
+
+Start every resumed session with:
+
+1. [docs/tracking/current-state.md](/home/opc/work/AgentFromScrach/docs/tracking/current-state.md)
+2. [docs/tracking/todo.md](/home/opc/work/AgentFromScrach/docs/tracking/todo.md)
+3. [docs/tracking/change-log.md](/home/opc/work/AgentFromScrach/docs/tracking/change-log.md)
 
 ## Local Database Configuration
 

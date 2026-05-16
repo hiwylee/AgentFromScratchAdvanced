@@ -18,6 +18,7 @@ This repository is for building an agent runtime from scratch while using
 - `docs/design-docs/`: architecture notes and technical tradeoffs.
 - `docs/exec-plans/active/`: current implementation plans.
 - `docs/exec-plans/completed/`: finished plans with outcomes.
+- `docs/tracking/`: current state, todo list, decisions, and change log.
 - `docs/references/`: distilled notes from `../codex` or external material.
 - `docs/generated/`: generated artifacts only; do not hand-edit unless noted.
 
@@ -36,13 +37,33 @@ This repository is for building an agent runtime from scratch while using
 - Put stable project instructions here. Put detailed, evolving work plans in
   `docs/exec-plans/active/`.
 
+## Continuity Tracking
+
+Update these files whenever meaningful project direction, scope, or
+implementation state changes:
+
+- `docs/tracking/current-state.md`: current focus, last completed work, next
+  action, and resume notes.
+- `docs/tracking/todo.md`: full todo list with status.
+- `docs/tracking/change-log.md`: human-written summary of important changes.
+- `docs/tracking/decisions.md`: durable decisions and rationale.
+
+Before ending a work session, make sure `current-state.md` answers:
+
+1. What was just done?
+2. What should happen next?
+3. What is blocked or undecided?
+4. Which command or file should the next session open first?
+
 ## Current Starting Point
 
 Read these first:
 
-1. `docs/product-specs/agent-runtime.md`
-2. `docs/design-docs/harness-engineering.md`
-3. `docs/design-docs/architecture.md`
-4. `docs/design-docs/database-natural-language.md`
-5. `docs/design-docs/oracle-adw-connection.md`
-6. `docs/exec-plans/active/0001-project-bootstrap.md`
+1. `docs/tracking/current-state.md`
+2. `docs/tracking/todo.md`
+3. `docs/product-specs/agent-runtime.md`
+4. `docs/design-docs/harness-engineering.md`
+5. `docs/design-docs/architecture.md`
+6. `docs/design-docs/database-natural-language.md`
+7. `docs/design-docs/oracle-adw-connection.md`
+8. `docs/exec-plans/active/0001-project-bootstrap.md`
