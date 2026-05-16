@@ -1,0 +1,3 @@
+#!/usr/bin/env sh
+export UV_CACHE_DIR="${UV_CACHE_DIR:-.uv-cache}"
+exec uv run --python 3.12 python -m agent_runtime "$@"

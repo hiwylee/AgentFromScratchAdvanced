@@ -17,6 +17,14 @@ Wallet_*/
 .agent/
 docs/generated/
 
+# Python / uv local state
+.venv/
+.uv-cache/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+
 # Editor and OS noise
 .DS_Store
 *.swp

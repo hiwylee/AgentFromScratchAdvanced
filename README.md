@@ -50,6 +50,26 @@ SQLcl is expected at:
 /home/opc/.local/share/sqlcl/sqlcl/bin/sql
 ```
 
+## Running The Prototype
+
+The current executable is a Python 3.12+ prototype run through `uv`.
+
+```bash
+UV_CACHE_DIR=.uv-cache uv run --python 3.12 python -m agent_runtime ask "지난달 상품별 매출 추이를 보여줘"
+```
+
+or:
+
+```bash
+bin/agent ask "지난달 상품별 매출 추이를 보여줘"
+```
+
+Run tests with:
+
+```bash
+UV_CACHE_DIR=.uv-cache uv run --python 3.12 python -m unittest discover -s tests
+```
+
 ## First Discussion Topics
 
 - Runtime language and packaging.

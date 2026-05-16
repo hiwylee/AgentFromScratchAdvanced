@@ -1,0 +1,48 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "UserIntent",
+  "type": "object",
+  "required": [
+    "intent_type",
+    "task_type",
+    "safety_level",
+    "requires_oracle_adw_context",
+    "entities",
+    "required_context",
+    "ambiguities",
+    "next_action"
+  ],
+  "properties": {
+    "intent_type": {
+      "type": "string"
+    },
+    "task_type": {
+      "type": "string"
+    },
+    "safety_level": {
+      "type": "string"
+    },
+    "requires_oracle_adw_context": {
+      "type": "boolean"
+    },
+    "entities": {
+      "type": "object"
+    },
+    "required_context": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "ambiguities": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "next_action": {
+      "type": "string"
+    }
+  },
+  "additionalProperties": false
+}

@@ -78,3 +78,13 @@ behind a connector interface.
 
 Rationale: SQLcl is available locally and matches the immediate environment,
 while an interface keeps the option open for a direct Oracle driver later.
+
+## 2026-05-16: Use A uv-Managed Python Prototype Before Rust Hardening
+
+Decision: Implement the first intent-first runtime slice as a Python 3.12+
+prototype executed through `uv`, with no external runtime dependencies.
+
+Rationale: Rust is not installed in the current environment, and the earliest
+phase needs fast iteration over intent schemas, prompts, traces, and artifact
+formats. The design still keeps interfaces and artifacts separate so the core
+can be hardened or ported later.

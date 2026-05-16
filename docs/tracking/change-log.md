@@ -24,3 +24,6 @@ direction and implementation changes, not every tiny edit.
 - Added planner/developer review notes and PM decisions. The MVP is now
   intent-first with traceability and minimal Oracle ADW read-only connectivity;
   full NL-to-SQL is explicitly later.
+- Started Milestone 1 with a uv-managed Python 3.12+ prototype. Added `agent ask`,
+  structured intent analysis, trace/audit output, redaction helpers, artifact
+  files, and initial `unittest` coverage.

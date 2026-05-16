@@ -21,27 +21,30 @@
 
 ## Implementation Decisions
 
-- `[?]` Choose primary runtime language.
-- `[?]` Choose first CLI command shape.
-- `[?]` Choose mock-model-first versus API-model-first sequencing.
+- `[x]` Choose primary runtime language: uv-managed Python 3.12+ prototype first,
+  Rust hardening later if needed.
+- `[x]` Choose first CLI command shape: `agent ask <text>`.
+- `[x]` Choose mock-model-first versus API-model-first sequencing.
 - `[?]` Choose first Oracle ADW execution backend: SQLcl subprocess or direct
   driver.
-- `[?]` Choose initial test framework.
-- `[?]` Choose prompt, policy, memory, and eval artifact formats.
+- `[x]` Choose initial test framework: Python `unittest`.
+- `[x]` Choose initial prompt, policy, memory, and eval artifact formats:
+  Markdown and JSON.
 - `[?]` Choose schema retrieval strategy for compact Oracle ADW context.
 
 ## Milestone 1: Minimal Agent Loop
 
-- `[ ]` Create the first compilable package.
+- `[x]` Create the first executable package.
 - `[ ]` Define message, action, observation, and final-answer types.
-- `[ ]` Define structured user intent types.
+- `[x]` Define structured user intent types.
 - `[ ]` Implement a mock model adapter.
 - `[ ]` Implement the basic agent loop and stop conditions.
-- `[ ]` Add append-only audit event recording.
+- `[x]` Add append-only audit event recording.
 - `[ ]` Add cancellation and timeout primitives.
 - `[ ]` Add token, cost, row, and latency budget placeholders.
-- `[ ]` Add focused tests for state transitions.
-- `[ ]` Add a CLI entry point that can run with the mock model.
+- `[x]` Add focused tests for intent and redaction behavior.
+- `[x]` Add a CLI entry point for structured intent analysis.
+- `[x]` Verify the prototype through `uv run --python 3.12`.
 
 Acceptance criteria:
 

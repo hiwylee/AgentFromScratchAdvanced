@@ -1,0 +1,19 @@
+{
+  "version": 1,
+  "redact_key_parts": [
+    "PASS",
+    "PASSWORD",
+    "SECRET",
+    "TOKEN",
+    "API_KEY",
+    "PRIVATE_KEY",
+    "WALLET_PASS"
+  ],
+  "forbidden_outputs": [
+    "passwords",
+    "wallet passwords",
+    "api keys",
+    "private keys",
+    "secret-bearing connection strings"
+  ]
+}

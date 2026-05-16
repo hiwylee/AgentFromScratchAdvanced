@@ -26,15 +26,21 @@ Oracle ADW natural-language data access as the first domain specialization.
 - Ran a planner/developer review and PM reflection. The MVP is now scoped as an
   intent-first agent foundation with audit traces and minimal Oracle ADW
   read-only connectivity, not full autonomous NL-to-SQL.
+- Started Milestone 1 implementation as a uv-managed Python 3.12+ prototype:
+  `agent ask <text>` now emits structured intent, trace output, and append-only
+  audit records.
 
 ## Next Action
 
-Decide the implementation stack and first executable package shape.
+Continue Milestone 1 by turning the prototype into a fuller agent loop:
+message/action/observation types, a mock model adapter boundary, stop
+conditions, cancellation/timeouts, and budget placeholders.
 
 Recommended starting point:
 
-- Rust core runtime.
-- Mock-model-first agent loop.
+- uv-managed Python 3.12+ prototype first, with Rust hardening later if needed.
+- Mock-model-first agent loop and deterministic intent heuristics for the
+  initial slice.
 - Prompt, policy, memory, and eval artifacts stored as data files.
 - Append-only audit events from the first executable milestone.
 - `agent ask <text>` should first prove structured intent analysis and next
@@ -42,10 +48,20 @@ Recommended starting point:
 - Oracle ADW connector design kept behind an interface until the core loop is
   testable.
 
+## Last Verification
+
+```bash
+UV_CACHE_DIR=.uv-cache uv run --python 3.12 python -m unittest discover -s tests
+bin/agent ask "지난달 상품별 매출 추이를 보여줘" --trace-dir /tmp/afs-traces-312 --audit-log /tmp/afs-audit-312.jsonl
+UV_CACHE_DIR=.uv-cache uv run --python 3.12 python -m agent_runtime ask "고객 테이블에서 오래된 데이터를 삭제해줘" --trace-dir /tmp/afs-traces-block --audit-log /tmp/afs-audit-block.jsonl
+```
+
+All commands passed.
+
 ## Open Questions
 
 - Should the first implementation be Rust-only, or Rust core plus a TypeScript
-  or Python helper layer?
+  or Python helper layer? Decided: Python 3.12+ prototype first through `uv`.
 - Should Oracle ADW execution use SQLcl subprocesses first or a direct Oracle
   driver?
 - Which read-only schema introspection queries are safe enough for the first
@@ -54,7 +70,7 @@ Recommended starting point:
   context?
 - Which eval fixture format should become the frozen golden set?
 - Which artifact format should be used first for intent schemas and mock model
-  fixtures?
+  fixtures? Initial decision: JSON schemas and Markdown prompts.
 
 ## Resume Checklist
 
