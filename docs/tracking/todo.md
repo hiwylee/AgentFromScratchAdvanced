@@ -59,10 +59,12 @@ Acceptance criteria:
 
 ## Milestone 2: Tool Loop
 
-- `[ ]` Define a structured tool interface.
-- `[ ]` Add tool registry and validation.
-- `[ ]` Add retry and max-step limits.
-- `[ ]` Add observable progress reporting.
+- `[x]` Define a structured tool interface.
+- `[x]` Add tool registry and validation.
+- `[~]` Add retry and max-step limits.
+- `[x]` Add observable progress reporting.
+- `[x]` Require auditable tool execution context and block high-risk/write tools
+  without explicit approval.
 
 ## Milestone 2A: Workflow Orchestration Skeleton
 
@@ -88,13 +90,13 @@ Acceptance criteria:
 
 ## Milestone 3: Observability And Eval Skeleton
 
-- `[ ]` Add structured trace output for agent steps.
-- `[ ]` Add eval fixture file format.
-- `[ ]` Add frozen golden eval set location.
-- `[ ]` Add eval runner skeleton with mock-model fixtures.
-- `[ ]` Add prompt, policy, and memory version fields to traces.
-- `[ ]` Add redaction tests for secrets.
-- `[ ]` Promote workflow pause/resume monitor events into generic trace schema.
+- `[x]` Add structured trace output for agent steps.
+- `[x]` Add eval fixture file format.
+- `[x]` Add frozen golden eval set location.
+- `[x]` Add eval runner skeleton with mock-model fixtures.
+- `[x]` Add prompt, policy, and memory version fields to traces.
+- `[x]` Add redaction tests for secrets.
+- `[~]` Promote workflow pause/resume monitor events into generic trace schema.
 
 Acceptance criteria:
 
@@ -105,16 +107,16 @@ Acceptance criteria:
 
 ## Milestone 4: Oracle ADW Read-Only Foundation
 
-- `[ ]` Load Oracle ADW config from environment variables.
-- `[ ]` Verify SQLcl exists without printing secrets.
-- `[ ]` Verify wallet paths without printing wallet contents.
+- `[x]` Load Oracle ADW config from environment variables.
+- `[x]` Verify SQLcl exists without printing secrets.
+- `[x]` Verify wallet paths without printing wallet contents.
 - `[ ]` Implement working-user read-only query execution.
-- `[ ]` Add database least-privilege expectations for the working user.
-- `[ ]` Add query policy that blocks writes, DDL, `SELECT ... FOR UPDATE`,
+- `[x]` Add database least-privilege expectations for the working user.
+- `[x]` Add query policy that blocks writes, DDL, `SELECT ... FOR UPDATE`,
   procedural blocks, database links, resource-heavy hints, and unsafe
   multi-statement input.
-- `[ ]` Add schema introspection queries.
-- `[ ]` Add tests with fixtures that do not require real credentials.
+- `[x]` Add schema introspection queries.
+- `[x]` Add tests with fixtures that do not require real credentials.
 
 Acceptance criteria:
 

@@ -61,3 +61,47 @@ The first Oracle ADW connector should:
 4. connect as the working user for read-only queries;
 5. connect as admin only for explicit administrative workflows;
 6. enforce read-only query policy for natural-language tasks.
+
+## Milestone 4 Foundation Skeleton
+
+`agent_runtime/oracle_adw.py` now defines the pre-connection foundation for
+Oracle ADW support. It deliberately does not connect to a real database yet.
+The skeleton provides:
+
+- `OracleAdwConfig.from_env(...)` for environment-based configuration loading.
+  Status helpers expose booleans and redacted dictionaries instead of printing
+  passwords, wallet passwords, or full DSNs.
+- `verify_sqlcl(...)` for SQLcl path resolution and version checks. The version
+  runner is injectable so tests can use fixtures instead of a real SQLcl
+  installation.
+- `verify_wallet_paths(...)` for existence and file-type checks on wallet
+  directories or files. The check uses path metadata only and never reads wallet
+  contents.
+- `validate_read_only_sql(...)` and `require_read_only_sql(...)` as the first
+  application-level SQL policy layer.
+- schema introspection query constants for tables, columns, and comments using
+  Oracle data dictionary views available to the working user.
+
+The real execution method on `OracleAdwReadOnlyConnector` remains closed with
+`NotImplementedError`. This is intentional until SQLcl invocation, audit
+recording, result limits, timeout behavior, and credential passing are designed
+and tested.
+
+## Read-Only SQL Policy
+
+Natural-language database tasks must pass the read-only policy before any
+future execution backend can run them. The current policy allows a single
+`SELECT` or `WITH` statement and blocks:
+
+- DML and DDL/admin keywords such as `INSERT`, `UPDATE`, `DELETE`, `MERGE`,
+  `CREATE`, `ALTER`, `DROP`, `GRANT`, and `REVOKE`.
+- `SELECT ... FOR UPDATE`.
+- PL/SQL blocks and SQLcl slash block execution.
+- database links using `@`.
+- unsafe multi-statement input.
+- resource-heavy optimizer hints such as `PARALLEL`, `FULL`, `USE_HASH`,
+  `MATERIALIZE`, and `GATHER_PLAN_STATISTICS`.
+
+This policy is a second layer behind database least privilege. The ADW working
+user must still be read-only because string validation is not a complete SQL
+sandbox.

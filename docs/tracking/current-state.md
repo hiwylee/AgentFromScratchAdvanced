@@ -47,6 +47,37 @@ Oracle ADW natural-language data access as the first domain specialization.
   pause/resume status, redacts CLI workflow output, blocks invalid asset status
   and duplicate registration rules, and treats empty source results as
   `closed/no_records_to_load`.
+- Started Milestone 2 tool loop implementation with structured tool specs,
+  registry validation, retry-aware tool execution results, progress event hooks,
+  redacted tool outputs, auditable execution context, and approval gates for
+  high-risk/write tools.
+- Added the Milestone 3 observability/eval skeleton in a disjoint runtime
+  layer: versioned trace records, frozen golden mock intent/workflow fixtures,
+  a local AgentLoop/mock-model eval runner, and secret-leak checks for trace
+  and eval output.
+- Added the Milestone 4 Oracle ADW read-only foundation skeleton:
+  environment configuration loading, redacted SQLcl status verification, wallet
+  path metadata checks, read-only SQL policy validation, schema introspection
+  query constants, and fixture-only tests. Real ADW execution is still closed.
+- Reflected senior review blockers for the parallel Milestone 2-4 work:
+  Oracle policy now blocks `--+` line hints, package/unallowlisted function
+  calls, and SQLcl timeout escapes; eval secret checks filter low-signal common
+  env values.
+- Further tightened the Oracle SQL policy for the parser-less foundation:
+  quoted identifiers, mixed quoted/unquoted package calls, comment-separated
+  function calls, and dotted references that do not use visible FROM/JOIN table
+  names or aliases are blocked conservatively. Nested query shapes with dotted
+  references and compound query shapes with dotted references are also blocked
+  until a real Oracle SQL parser can enforce scope correctly. Multi-part dotted
+  references are blocked for the same reason. Comment stripping for callable
+  analysis now preserves comment markers inside double-quoted identifiers.
+  SQLcl slash lines with trailing comments, sequence `NEXTVAL`, and
+  `PARALLEL_INDEX` hints are also blocked. SQLcl blank-line script breaks and
+  command lines such as `HOST`, `CONNECT`, `@script`, and shell escapes are
+  blocked before SQL validation, including `.` buffer terminators and command
+  abbreviations such as `hos` and `conne`. Any slash-starting SQLcl buffer
+  execution line is treated as procedural, even with trailing text. SQLcl
+  line-level gates now inspect raw input lines before literal masking.
 
 ## Next Action
 
@@ -54,11 +85,14 @@ Milestone 1 runtime controls are now in place: stop conditions, timeout checks,
 cancellation token support, budget placeholders, message/action/observation
 types, mock model adapter boundary, and monitorable run status.
 
-Next implementation focus: Milestone 2 tool registry design and Milestone 3
-observability/eval skeleton. Persistent workflow approval/resume and real
-target-system writes must remain closed until signed or hashed checkpoint
-persistence, approval authorization, idempotency, and replay protection are
-designed.
+Next implementation focus: finish Milestone 2 tool loop integration into
+`AgentLoop`, wire workflow pause/resume records into the generic trace schema,
+and design the remaining Milestone 4 SQLcl execution path. Persistent workflow
+approval/resume and real target-system writes must remain closed until signed
+or hashed checkpoint persistence, approval authorization, idempotency, and
+replay protection are designed. Real ADW execution must remain closed until
+SQLcl credential passing, timeouts, result limits, and audit redaction are
+specified and tested.
 
 Recommended starting point:
 
@@ -75,6 +109,8 @@ Recommended starting point:
 ## Last Verification
 
 ```bash
+UV_CACHE_DIR=.uv-cache uv run --python 3.12 python -m unittest tests.test_oracle_adw
+UV_CACHE_DIR=.uv-cache uv run --python 3.12 python -m unittest tests/test_eval_runner.py
 UV_CACHE_DIR=.uv-cache uv run --python 3.12 python -m unittest discover -s tests
 bin/agent workflow "이번달 특허자산 대체 등록 진행해줘" --run-dir /tmp/afs-workflow-final2 --audit-log /tmp/afs-workflow-final2.jsonl
 bin/agent ask "지난달 상품별 매출 추이를 보여줘" --run-dir /tmp/afs-runs-1 --audit-log /tmp/afs-audit-1.jsonl
@@ -85,8 +121,9 @@ bin/agent status --run-dir /tmp/afs-runs-2
 bin/agent status --run-dir /tmp/afs-workflow-intent2
 ```
 
-The latest full test run covered 36 tests and passed. The latest workflow smoke
-returned `checkpoint_required` and blocked target-system D loading.
+The latest full test run covered 60 tests and passed. The latest focused
+Milestone 2-4 test run covered 24 tests and passed. The latest workflow smoke returned
+`checkpoint_required` and blocked target-system D loading.
 
 ## Open Questions
 
@@ -95,10 +132,13 @@ returned `checkpoint_required` and blocked target-system D loading.
 - Should Oracle ADW execution use SQLcl subprocesses first or a direct Oracle
   driver?
 - Which read-only schema introspection queries are safe enough for the first
-  connector milestone?
+  connector milestone? Initial constants now cover tables, columns, and comments
+  through Oracle data dictionary views.
 - Which schema retrieval strategy should be used first for compact Oracle ADW
   context?
-- Which eval fixture format should become the frozen golden set?
+- Which eval fixture format should become the frozen golden set? Initial
+  decision: JSON files under `artifacts/evals/golden/` using
+  `agent-runtime.eval-fixture.v1`.
 - Which artifact format should be used first for intent schemas and mock model
   fixtures? Initial decision: JSON schemas and Markdown prompts.
 - Which workflow template format and review packet format should be used first?
@@ -109,6 +149,8 @@ returned `checkpoint_required` and blocked target-system D loading.
 - Read `AGENTS.md`.
 - Read this file.
 - Read `docs/tracking/todo.md`.
+- For Oracle ADW work, open `agent_runtime/oracle_adw.py` and
+  `tests/test_oracle_adw.py` first.
 - Check local git state with:
 
 ```bash

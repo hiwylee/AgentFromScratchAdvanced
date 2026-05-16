@@ -136,3 +136,13 @@ Decision: A workflow with no reconciled records should close with
 
 Rationale: Loading zero records is operationally ambiguous and makes monitoring
 look like a pending write. A no-op close is clearer and safer.
+
+## 2026-05-16: Oracle ADW Execution Starts Closed
+
+Decision: Milestone 4 implements Oracle ADW configuration checks, SQLcl
+verification, wallet metadata checks, read-only SQL validation, and schema
+query constants before enabling real database execution.
+
+Rationale: Secrets, wallet handling, SQL safety, audit records, timeouts, row
+limits, and SQLcl subprocess behavior need tests before the runtime can safely
+connect to ADW.

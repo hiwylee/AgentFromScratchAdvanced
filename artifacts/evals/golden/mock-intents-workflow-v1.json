@@ -1,0 +1,114 @@
+{
+  "schema_version": "agent-runtime.eval-fixture.v1",
+  "fixture_id": "mock-intents-workflow-v1",
+  "description": "Frozen golden cases for the current deterministic mock intent planner and workflow selection path.",
+  "artifact_versions": {
+    "intent_prompt": "1",
+    "mock_model": "1",
+    "redaction_policy": "1"
+  },
+  "cases": [
+    {
+      "case_id": "general_request",
+      "input": "summarize this repository",
+      "expected": {
+        "intent": {
+          "intent_type": "general",
+          "task_type": "general_request",
+          "safety_level": "normal",
+          "requires_oracle_adw_context": false,
+          "next_action": "answer_directly"
+        },
+        "action": {
+          "kind": "final_answer",
+          "reason": "The request does not require Oracle ADW context."
+        },
+        "final_answer": {
+          "next_action": "Answer directly."
+        }
+      }
+    },
+    {
+      "case_id": "korean_database_trend",
+      "input": "지난달 상품별 매출 추이를 보여줘",
+      "expected": {
+        "intent": {
+          "intent_type": "database_analysis",
+          "task_type": "trend_analysis",
+          "safety_level": "read_only",
+          "requires_oracle_adw_context": true,
+          "entities": {
+            "metrics": [
+              "revenue"
+            ],
+            "dimensions": [
+              "product"
+            ],
+            "time_ranges": [
+              "previous_month"
+            ]
+          },
+          "required_context": [
+            "business_glossary",
+            "oracle_adw_schema"
+          ],
+          "ambiguities": [
+            "dimension_table_mapping",
+            "metric_definition"
+          ],
+          "next_action": "inspect_schema_then_clarify"
+        },
+        "action": {
+          "kind": "ask_clarification"
+        },
+        "final_answer": {
+          "next_action": "Inspect Oracle ADW schema context, then ask a clarification question if ambiguity remains."
+        }
+      }
+    },
+    {
+      "case_id": "blocked_database_write",
+      "input": "고객 테이블에서 오래된 데이터를 삭제해줘",
+      "expected": {
+        "intent": {
+          "intent_type": "database_analysis",
+          "safety_level": "blocked_write_request",
+          "next_action": "refuse_or_request_explicit_safe_alternative"
+        },
+        "action": {
+          "kind": "refuse"
+        },
+        "final_answer": {
+          "next_action": "Ask a read-only analysis question or request an explicit safe alternative."
+        }
+      }
+    },
+    {
+      "case_id": "korean_patent_asset_workflow",
+      "input": "이번달 특허자산 대체 등록 진행해줘",
+      "expected": {
+        "intent": {
+          "intent_type": "workflow_execution",
+          "task_type": "patent_asset_replacement_registration",
+          "safety_level": "requires_checkpoint",
+          "requires_oracle_adw_context": false,
+          "entities": {
+            "workflow": [
+              "patent_asset_replacement_registration"
+            ],
+            "periods": [
+              "current_month"
+            ]
+          },
+          "next_action": "select_workflow_template"
+        },
+        "action": {
+          "kind": "select_workflow"
+        },
+        "final_answer": {
+          "next_action": "Select a workflow template and prepare a reviewable execution plan."
+        }
+      }
+    }
+  ]
+}
