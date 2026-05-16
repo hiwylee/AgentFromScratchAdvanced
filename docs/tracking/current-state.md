@@ -35,6 +35,18 @@ Oracle ADW natural-language data access as the first domain specialization.
 - Added first-pass workflow intent recognition for requests like
   `이번달 특허자산 대체 등록 진행해줘`, returning `workflow_execution` and
   `select_workflow_template` as the next action.
+- Added the first JSON workflow template and JSON Schema for the mock patent
+  asset replacement registration workflow. JSON is now the initial workflow
+  template and human-gate review packet format.
+- Implemented the Milestone 2A workflow skeleton with mock A/B/C/D connectors,
+  parallel A/B lookup, C enrichment, deterministic reconciliation, human review
+  packets, monitor/audit events, and checkpoint-required D loading.
+- Ran senior architect and senior developer reviews over the workflow skeleton
+  and reflected blocking feedback. The mock workflow now closes rejected
+  checkpoints, copies checkpoint records before target connector calls, records
+  pause/resume status, redacts CLI workflow output, blocks invalid asset status
+  and duplicate registration rules, and treats empty source results as
+  `closed/no_records_to_load`.
 
 ## Next Action
 
@@ -42,9 +54,11 @@ Milestone 1 runtime controls are now in place: stop conditions, timeout checks,
 cancellation token support, budget placeholders, message/action/observation
 types, mock model adapter boundary, and monitorable run status.
 
-Next implementation focus: prepare Milestone 2A workflow orchestration skeleton
-with mock connectors and human-gate state, while keeping Milestone 2 tool
-registry design aligned.
+Next implementation focus: Milestone 2 tool registry design and Milestone 3
+observability/eval skeleton. Persistent workflow approval/resume and real
+target-system writes must remain closed until signed or hashed checkpoint
+persistence, approval authorization, idempotency, and replay protection are
+designed.
 
 Recommended starting point:
 
@@ -62,6 +76,7 @@ Recommended starting point:
 
 ```bash
 UV_CACHE_DIR=.uv-cache uv run --python 3.12 python -m unittest discover -s tests
+bin/agent workflow "이번달 특허자산 대체 등록 진행해줘" --run-dir /tmp/afs-workflow-final2 --audit-log /tmp/afs-workflow-final2.jsonl
 bin/agent ask "지난달 상품별 매출 추이를 보여줘" --run-dir /tmp/afs-runs-1 --audit-log /tmp/afs-audit-1.jsonl
 bin/agent ask "고객 테이블에서 오래된 데이터를 삭제해줘" --run-dir /tmp/afs-runs-2 --audit-log /tmp/afs-audit-2.jsonl
 bin/agent ask "이번달 특허자산 대체 등록 진행해줘" --run-dir /tmp/afs-workflow-intent2 --audit-log /tmp/afs-workflow-intent2.jsonl
@@ -70,7 +85,8 @@ bin/agent status --run-dir /tmp/afs-runs-2
 bin/agent status --run-dir /tmp/afs-workflow-intent2
 ```
 
-The latest full test run covered 13 tests and passed.
+The latest full test run covered 36 tests and passed. The latest workflow smoke
+returned `checkpoint_required` and blocked target-system D loading.
 
 ## Open Questions
 
@@ -86,6 +102,7 @@ The latest full test run covered 13 tests and passed.
 - Which artifact format should be used first for intent schemas and mock model
   fixtures? Initial decision: JSON schemas and Markdown prompts.
 - Which workflow template format and review packet format should be used first?
+  Decided: JSON artifacts validated by JSON Schema.
 
 ## Resume Checklist
 

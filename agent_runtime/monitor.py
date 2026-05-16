@@ -56,6 +56,11 @@ class RunMonitor:
         self.event("run_finished", summary)
         self.write_status(extra={"summary": redact(summary)})
 
+    def pause(self, state: RunState, summary: dict[str, Any]) -> None:
+        self.state = state
+        self.event("run_paused", summary)
+        self.write_status(extra={"summary": redact(summary)})
+
     def write_status(self, extra: dict[str, Any] | None = None) -> None:
         status = {
             "run_id": self.run_id,

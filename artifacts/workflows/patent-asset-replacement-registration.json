@@ -1,0 +1,409 @@
+{
+  "$schema": "../schemas/workflow-template.schema.json",
+  "schema_version": 1,
+  "template_id": "patent-asset-replacement-registration",
+  "template_version": 1,
+  "name": "Patent Asset Replacement Registration",
+  "description": "Mock workflow for current-month patent asset replacement registration across source, comparison, enrichment, and target systems.",
+  "status": "mock",
+  "intent": {
+    "intent_type": "workflow_execution",
+    "task_type": "patent_asset_replacement_registration",
+    "example_utterances": [
+      "이번달 특허자산 대체 등록 진행해줘"
+    ],
+    "entities": {
+      "period": "current_month",
+      "asset_type": "patent",
+      "business_action": "replacement_registration"
+    }
+  },
+  "systems": [
+    {
+      "system_id": "A",
+      "role": "candidate patent asset source",
+      "connector": "mock_source_a",
+      "access_mode": "read"
+    },
+    {
+      "system_id": "B",
+      "role": "comparison and constraint source",
+      "connector": "mock_comparison_b",
+      "access_mode": "read"
+    },
+    {
+      "system_id": "C",
+      "role": "missing-field enrichment source",
+      "connector": "mock_enrichment_c",
+      "access_mode": "read"
+    },
+    {
+      "system_id": "D",
+      "role": "target registration system",
+      "connector": "mock_target_d",
+      "access_mode": "write"
+    }
+  ],
+  "graph": {
+    "start": [
+      "lookup_source_a",
+      "lookup_comparison_b"
+    ],
+    "nodes": [
+      {
+        "node_id": "lookup_source_a",
+        "type": "lookup",
+        "description": "Fetch current-month candidate patent asset replacement records from source system A.",
+        "system_id": "A",
+        "depends_on": [],
+        "inputs": [
+          "period",
+          "asset_type"
+        ],
+        "outputs": [
+          "source_a_candidates"
+        ],
+        "policy": {
+          "risk_level": "low",
+          "requires_approval": false
+        },
+        "retry": {
+          "max_attempts": 2,
+          "backoff": "none"
+        },
+        "timeout_seconds": 30,
+        "next": [
+          "reconcile_candidates"
+        ]
+      },
+      {
+        "node_id": "lookup_comparison_b",
+        "type": "lookup",
+        "description": "Fetch comparison records and business constraints from system B.",
+        "system_id": "B",
+        "depends_on": [],
+        "inputs": [
+          "period",
+          "asset_type"
+        ],
+        "outputs": [
+          "comparison_b_records"
+        ],
+        "policy": {
+          "risk_level": "low",
+          "requires_approval": false
+        },
+        "retry": {
+          "max_attempts": 2,
+          "backoff": "none"
+        },
+        "timeout_seconds": 30,
+        "next": [
+          "reconcile_candidates"
+        ]
+      },
+      {
+        "node_id": "reconcile_candidates",
+        "type": "reconcile",
+        "description": "Run deterministic identity, period, status, duplicate, missing-field, and business-rule checks.",
+        "depends_on": [
+          "lookup_source_a",
+          "lookup_comparison_b"
+        ],
+        "inputs": [
+          "source_a_candidates",
+          "comparison_b_records"
+        ],
+        "outputs": [
+          "reconciliation_result"
+        ],
+        "policy": {
+          "risk_level": "medium",
+          "requires_approval": false
+        },
+        "retry": {
+          "max_attempts": 1,
+          "backoff": "none"
+        },
+        "timeout_seconds": 60,
+        "next": [
+          "enrich_missing_fields",
+          "pre_load_checkpoint",
+          "human_review_unresolved"
+        ]
+      },
+      {
+        "node_id": "enrich_missing_fields",
+        "type": "enrich",
+        "description": "Fetch missing required values from enrichment system C when reconciliation identifies enrichable gaps.",
+        "system_id": "C",
+        "depends_on": [
+          "reconcile_candidates"
+        ],
+        "inputs": [
+          "reconciliation_result"
+        ],
+        "outputs": [
+          "enriched_candidates"
+        ],
+        "policy": {
+          "risk_level": "low",
+          "requires_approval": false
+        },
+        "retry": {
+          "max_attempts": 2,
+          "backoff": "none"
+        },
+        "timeout_seconds": 30,
+        "condition": "reconciliation_result.has_enrichable_missing_fields",
+        "next": [
+          "reconcile_after_enrichment"
+        ]
+      },
+      {
+        "node_id": "reconcile_after_enrichment",
+        "type": "reconcile",
+        "description": "Re-run reconciliation with enriched candidate records.",
+        "depends_on": [
+          "enrich_missing_fields"
+        ],
+        "inputs": [
+          "enriched_candidates",
+          "comparison_b_records"
+        ],
+        "outputs": [
+          "post_enrichment_reconciliation_result"
+        ],
+        "policy": {
+          "risk_level": "medium",
+          "requires_approval": false
+        },
+        "retry": {
+          "max_attempts": 1,
+          "backoff": "none"
+        },
+        "timeout_seconds": 60,
+        "next": [
+          "pre_load_checkpoint",
+          "human_review_unresolved"
+        ]
+      },
+      {
+        "node_id": "human_review_unresolved",
+        "type": "human_gate",
+        "description": "Pause for human review when blocking reconciliation issues remain unresolved.",
+        "depends_on": [
+          "reconcile_candidates",
+          "reconcile_after_enrichment"
+        ],
+        "inputs": [
+          "reconciliation_result",
+          "post_enrichment_reconciliation_result"
+        ],
+        "outputs": [
+          "human_review_decision"
+        ],
+        "policy": {
+          "risk_level": "high",
+          "requires_approval": true
+        },
+        "retry": {
+          "max_attempts": 1,
+          "backoff": "none"
+        },
+        "timeout_seconds": 86400,
+        "condition": "reconciliation_result.has_unresolved_blocking_exceptions",
+        "next": [
+          "pre_load_checkpoint",
+          "completion_report"
+        ]
+      },
+      {
+        "node_id": "pre_load_checkpoint",
+        "type": "checkpoint",
+        "description": "Require explicit policy approval before any target-system registration load.",
+        "depends_on": [
+          "reconcile_candidates",
+          "reconcile_after_enrichment",
+          "human_review_unresolved"
+        ],
+        "inputs": [
+          "reconciliation_result",
+          "post_enrichment_reconciliation_result",
+          "human_review_decision"
+        ],
+        "outputs": [
+          "load_approval"
+        ],
+        "policy": {
+          "risk_level": "high",
+          "requires_approval": true
+        },
+        "retry": {
+          "max_attempts": 1,
+          "backoff": "none"
+        },
+        "timeout_seconds": 86400,
+        "condition": "all_blocking_exceptions_resolved",
+        "next": [
+          "load_target_d"
+        ]
+      },
+      {
+        "node_id": "load_target_d",
+        "type": "load",
+        "description": "Mock load of approved replacement registration records into target system D.",
+        "system_id": "D",
+        "depends_on": [
+          "pre_load_checkpoint"
+        ],
+        "inputs": [
+          "load_approval"
+        ],
+        "outputs": [
+          "target_d_load_result"
+        ],
+        "policy": {
+          "risk_level": "high",
+          "requires_approval": true
+        },
+        "retry": {
+          "max_attempts": 1,
+          "backoff": "none"
+        },
+        "timeout_seconds": 60,
+        "next": [
+          "completion_report"
+        ]
+      },
+      {
+        "node_id": "completion_report",
+        "type": "report",
+        "description": "Produce completion, exception, and audit summary for the mock workflow run.",
+        "depends_on": [
+          "load_target_d",
+          "human_review_unresolved"
+        ],
+        "inputs": [
+          "target_d_load_result",
+          "human_review_decision"
+        ],
+        "outputs": [
+          "workflow_report"
+        ],
+        "policy": {
+          "risk_level": "low",
+          "requires_approval": false
+        },
+        "retry": {
+          "max_attempts": 1,
+          "backoff": "none"
+        },
+        "timeout_seconds": 30,
+        "next": []
+      }
+    ]
+  },
+  "reconciliation": {
+    "target_required_fields": [
+      "patent_id",
+      "replacement_asset_id",
+      "owner",
+      "period"
+    ],
+    "rules": [
+      {
+        "rule_id": "identity_match",
+        "description": "Candidate patent asset identifiers must match comparison-system records.",
+        "severity": "blocking",
+        "inputs": [
+          "source_a_candidates",
+          "comparison_b_records"
+        ]
+      },
+      {
+        "rule_id": "period_valid",
+        "description": "Replacement registration period must match the requested current month.",
+        "severity": "blocking",
+        "inputs": [
+          "source_a_candidates"
+        ]
+      },
+      {
+        "rule_id": "asset_status_valid",
+        "description": "Candidate patent assets must be in a status eligible for replacement registration.",
+        "severity": "blocking",
+        "inputs": [
+          "source_a_candidates",
+          "comparison_b_records"
+        ]
+      },
+      {
+        "rule_id": "no_duplicate_registration",
+        "description": "Candidate records must not already be registered in the target-equivalent comparison view.",
+        "severity": "blocking",
+        "inputs": [
+          "comparison_b_records"
+        ]
+      },
+      {
+        "rule_id": "required_fields_present",
+        "description": "Required target load fields must be present or enrichable from system C.",
+        "severity": "warning",
+        "inputs": [
+          "source_a_candidates",
+          "comparison_b_records"
+        ]
+      }
+    ],
+    "unresolved_outcome": "human_review_unresolved"
+  },
+  "human_gates": [
+    {
+      "gate_id": "human_review_unresolved",
+      "description": "Review unresolved blocking exceptions or approve corrected records before target-system loading.",
+      "trigger": "blocking reconciliation issue remains after source comparison and optional enrichment",
+      "allowed_actions": [
+        "approve_corrected_records",
+        "reject_workflow",
+        "request_manual_correction",
+        "close_with_exceptions"
+      ]
+    }
+  ],
+  "review_packet": {
+    "format": "json",
+    "required_fields": [
+      "workflow_id",
+      "run_id",
+      "template_id",
+      "template_version",
+      "period",
+      "affected_records",
+      "failed_rules",
+      "system_evidence",
+      "proposed_resolution",
+      "allowed_actions",
+      "approval_impact"
+    ]
+  },
+  "audit": {
+    "required_events": [
+      "workflow_template_selected",
+      "workflow_node_started",
+      "workflow_node_completed",
+      "reconciliation_completed",
+      "human_gate_opened",
+      "human_decision_recorded",
+      "target_load_checkpoint_requested",
+      "workflow_completed"
+    ],
+    "forbidden_fields": [
+      "password",
+      "wallet_password",
+      "api_key",
+      "connection_string",
+      "secret"
+    ]
+  }
+}

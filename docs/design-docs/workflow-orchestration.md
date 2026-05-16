@@ -104,6 +104,25 @@ Every node should define:
 - audit fields;
 - rollback or compensation note when applicable.
 
+## Template And Review Packet Format
+
+The first workflow template format is JSON, validated by
+`artifacts/schemas/workflow-template.schema.json`.
+
+The first concrete template is
+`artifacts/workflows/patent-asset-replacement-registration.json`. It is a mock
+template only: it defines the A/B/C/D systems, graph nodes, reconciliation
+rules, human-gate review packet fields, target-load checkpoint, and audit event
+expectations. The current runtime loads and validates basic template invariants
+but still executes the first template through explicit Python flow. A generic
+template scheduler remains a later milestone before arbitrary workflow
+templates can be trusted.
+
+Human-gate review packets should also be JSON for the first slice. A review
+packet is not a loose chat question; it should contain the workflow/run ids,
+affected records, failed rules, system evidence, proposed resolution, allowed
+actions, and approval impact.
+
 ## Human-In-The-Loop
 
 Human review is required when:
@@ -144,7 +163,14 @@ DB analysis.
 - Default to read-only source-system access.
 - Treat target-system writes or loads as explicit high-risk steps.
 - Require checkpoint and approval policy before D-system loading.
+- Do not approve target-system loads from caller-editable result JSON.
+  Persistent resume requires signed or hashed checkpoint storage.
+- Keep workflow approval mock-only until the checkpoint store can verify a
+  template digest, reviewed packet digest, approver policy, idempotency key,
+  and replay state.
 - Never embed secrets in workflow templates, logs, or review packets.
+- Redact CLI, monitor, audit, and review-packet outputs before they can contain
+  Oracle-backed connector errors or secret-shaped values.
 - Store every source query, transformation, reconciliation result, and human
   decision in audit records.
 - Make workflow templates versioned artifacts.
@@ -161,3 +187,5 @@ prove the orchestration model with mock connectors:
 5. branch to mock C enrichment when needed;
 6. pause at a human gate for unresolved exceptions;
 7. expose monitorable run status and audit events.
+8. prevent rejected checkpoints, mutated connector inputs, empty result sets,
+   duplicate registrations, and invalid asset statuses from reaching target D.

@@ -38,3 +38,19 @@ direction and implementation changes, not every tiny edit.
 - Added first-pass workflow intent recognition for patent asset replacement
   registration requests, returning workflow template selection as the next
   safe action.
+- Added the first JSON workflow template artifact and JSON Schema for the mock
+  patent asset replacement registration workflow, including review packet
+  fields and target-load checkpoint expectations.
+- Implemented the Milestone 2A workflow skeleton with template-backed metadata,
+  mock A/B/C/D connectors, parallel A/B lookup, C enrichment, deterministic
+  reconciliation, human-gate checkpoint packets, monitor/audit events, and
+  tests for forged checkpoint attempts.
+- Reflected senior architect/developer review feedback into the workflow
+  skeleton: rejected checkpoints now close trusted resume state, target loads
+  receive copied checkpoint records, paused/resumed workflows update monitor
+  files, CLI workflow output is redacted, empty result sets close without D
+  loading, and declared mock rules for asset status and duplicate registration
+  are enforced.
+- Added CLI workflow tests so unsupported natural-language workflow requests do
+  not silently run the patent workflow, while supported patent requests still
+  pause at the target-load checkpoint.

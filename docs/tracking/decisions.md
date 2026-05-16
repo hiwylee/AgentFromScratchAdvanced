@@ -99,3 +99,40 @@ Rationale: Requests like patent asset replacement registration require source
 lookups, comparison, reconciliation, enrichment, target-system loading, and
 human review. Graph-based workflows make parallelism, checkpoints, human gates,
 and auditability explicit.
+
+## 2026-05-16: Workflow Templates And Review Packets Start As JSON
+
+Decision: Use JSON workflow templates validated by JSON Schema, and use JSON as
+the first human-gate review packet format.
+
+Rationale: The first workflow slice needs versioned, inspectable artifacts that
+can describe graph nodes, mock connectors, reconciliation rules, approval
+checkpoints, review packet fields, and audit expectations before runtime code
+exists.
+
+## 2026-05-16: Persistent Workflow Approval Stays Closed Until Checkpoints Are Tamper-Proof
+
+Decision: Do not expose CLI approval from caller-editable workflow result JSON.
+For now, approval can only resume from a trusted in-memory checkpoint in the
+same engine instance.
+
+Rationale: Result JSON can be forged. Persistent workflow approval requires a
+signed or hashed checkpoint store before target-system loading is safe.
+
+## 2026-05-16: Senior Review Gates Must Be Reflected Before Commit
+
+Decision: Workflow implementation changes should pass a senior architect review
+and a senior developer review before commit. Blocking feedback must be fixed or
+explicitly scoped out as mock-only before push.
+
+Rationale: The project is intentionally building an agent harness with workflow
+execution and database access. Review gates catch safety, checkpoint, audit,
+and connector risks before they become architectural defaults.
+
+## 2026-05-16: Empty Workflow Result Sets Close Without Target Loading
+
+Decision: A workflow with no reconciled records should close with
+`no_records_to_load`, not request a target-system D checkpoint.
+
+Rationale: Loading zero records is operationally ambiguous and makes monitoring
+look like a pending write. A no-op close is clearer and safer.

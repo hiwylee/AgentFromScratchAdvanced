@@ -1,0 +1,401 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "WorkflowTemplate",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "template_id",
+    "template_version",
+    "name",
+    "description",
+    "status",
+    "intent",
+    "systems",
+    "graph",
+    "reconciliation",
+    "human_gates",
+    "review_packet",
+    "audit"
+  ],
+  "properties": {
+    "$schema": {
+      "type": "string"
+    },
+    "schema_version": {
+      "type": "integer",
+      "const": 1
+    },
+    "template_id": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9-]*$"
+    },
+    "template_version": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "name": {
+      "type": "string",
+      "minLength": 1
+    },
+    "description": {
+      "type": "string",
+      "minLength": 1
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "mock",
+        "draft",
+        "active",
+        "retired"
+      ]
+    },
+    "intent": {
+      "type": "object",
+      "required": [
+        "intent_type",
+        "task_type",
+        "example_utterances",
+        "entities"
+      ],
+      "properties": {
+        "intent_type": {
+          "type": "string"
+        },
+        "task_type": {
+          "type": "string"
+        },
+        "example_utterances": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "minItems": 1
+        },
+        "entities": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "systems": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/system"
+      },
+      "minItems": 1
+    },
+    "graph": {
+      "type": "object",
+      "required": [
+        "start",
+        "nodes"
+      ],
+      "properties": {
+        "start": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1
+        },
+        "nodes": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/node"
+          },
+          "minItems": 1
+        }
+      },
+      "additionalProperties": false
+    },
+    "reconciliation": {
+      "type": "object",
+      "required": [
+        "target_required_fields",
+        "rules",
+        "unresolved_outcome"
+      ],
+      "properties": {
+        "target_required_fields": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1
+        },
+        "rules": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/reconciliation_rule"
+          },
+          "minItems": 1
+        },
+        "unresolved_outcome": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
+    },
+    "human_gates": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/human_gate"
+      }
+    },
+    "review_packet": {
+      "$ref": "#/$defs/review_packet"
+    },
+    "audit": {
+      "type": "object",
+      "required": [
+        "required_events",
+        "forbidden_fields"
+      ],
+      "properties": {
+        "required_events": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1
+        },
+        "forbidden_fields": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "system": {
+      "type": "object",
+      "required": [
+        "system_id",
+        "role",
+        "connector",
+        "access_mode"
+      ],
+      "properties": {
+        "system_id": {
+          "type": "string"
+        },
+        "role": {
+          "type": "string"
+        },
+        "connector": {
+          "type": "string"
+        },
+        "access_mode": {
+          "type": "string",
+          "enum": [
+            "read",
+            "write"
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "node": {
+      "type": "object",
+      "required": [
+        "node_id",
+        "type",
+        "description",
+        "depends_on",
+        "outputs",
+        "next"
+      ],
+      "properties": {
+        "node_id": {
+          "type": "string"
+        },
+        "type": {
+          "type": "string",
+          "enum": [
+            "lookup",
+            "reconcile",
+            "enrich",
+            "checkpoint",
+            "human_gate",
+            "load",
+            "report"
+          ]
+        },
+        "description": {
+          "type": "string"
+        },
+        "system_id": {
+          "type": "string"
+        },
+        "depends_on": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "inputs": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "outputs": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1
+        },
+        "policy": {
+          "$ref": "#/$defs/policy"
+        },
+        "retry": {
+          "$ref": "#/$defs/retry"
+        },
+        "timeout_seconds": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "condition": {
+          "type": "string"
+        },
+        "next": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "policy": {
+      "type": "object",
+      "required": [
+        "risk_level",
+        "requires_approval"
+      ],
+      "properties": {
+        "risk_level": {
+          "type": "string",
+          "enum": [
+            "low",
+            "medium",
+            "high"
+          ]
+        },
+        "requires_approval": {
+          "type": "boolean"
+        }
+      },
+      "additionalProperties": false
+    },
+    "retry": {
+      "type": "object",
+      "required": [
+        "max_attempts",
+        "backoff"
+      ],
+      "properties": {
+        "max_attempts": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "backoff": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
+    },
+    "reconciliation_rule": {
+      "type": "object",
+      "required": [
+        "rule_id",
+        "description",
+        "severity",
+        "inputs"
+      ],
+      "properties": {
+        "rule_id": {
+          "type": "string"
+        },
+        "description": {
+          "type": "string"
+        },
+        "severity": {
+          "type": "string",
+          "enum": [
+            "info",
+            "warning",
+            "blocking"
+          ]
+        },
+        "inputs": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1
+        }
+      },
+      "additionalProperties": false
+    },
+    "human_gate": {
+      "type": "object",
+      "required": [
+        "gate_id",
+        "description",
+        "trigger",
+        "allowed_actions"
+      ],
+      "properties": {
+        "gate_id": {
+          "type": "string"
+        },
+        "description": {
+          "type": "string"
+        },
+        "trigger": {
+          "type": "string"
+        },
+        "allowed_actions": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1
+        }
+      },
+      "additionalProperties": false
+    },
+    "review_packet": {
+      "type": "object",
+      "required": [
+        "format",
+        "required_fields"
+      ],
+      "properties": {
+        "format": {
+          "type": "string",
+          "const": "json"
+        },
+        "required_fields": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1
+        }
+      },
+      "additionalProperties": false
+    }
+  }
+}

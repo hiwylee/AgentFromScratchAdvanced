@@ -16,7 +16,18 @@ ActionKind = Literal[
     "select_workflow",
     "refuse",
 ]
-RunState = Literal["running", "completed", "failed", "cancelled", "timed_out", "stopped"]
+RunState = Literal[
+    "running",
+    "completed",
+    "failed",
+    "cancelled",
+    "timed_out",
+    "stopped",
+    "paused",
+    "checkpoint_required",
+    "closed",
+    "blocked",
+]
 
 
 def utc_now() -> str:

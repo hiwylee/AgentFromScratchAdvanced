@@ -31,7 +31,8 @@
 - `[x]` Choose initial prompt, policy, memory, and eval artifact formats:
   Markdown and JSON.
 - `[?]` Choose schema retrieval strategy for compact Oracle ADW context.
-- `[?]` Choose workflow template format and human-gate review packet format.
+- `[x]` Choose workflow template format and human-gate review packet format:
+  JSON artifacts validated by JSON Schema.
 
 ## Milestone 1: Minimal Agent Loop
 
@@ -66,12 +67,14 @@ Acceptance criteria:
 ## Milestone 2A: Workflow Orchestration Skeleton
 
 - `[x]` Define first-pass workflow intent fields.
-- `[ ]` Define workflow template artifact format.
-- `[ ]` Define workflow step graph data model.
-- `[ ]` Add mock connector interface for systems A/B/C/D.
-- `[ ]` Add deterministic reconciliation rule interface.
-- `[ ]` Add human-gate pause state and review packet format.
-- `[ ]` Add workflow status and audit events.
+- `[x]` Define workflow template artifact format.
+- `[x]` Define workflow step graph data model.
+- `[x]` Add mock connector interface for systems A/B/C/D.
+- `[x]` Add deterministic reconciliation rule interface.
+- `[x]` Add human-gate pause state and review packet format.
+- `[x]` Add workflow status and audit events.
+- `[x]` Reflect senior architect/developer review blockers for checkpoint
+  closure, connector mutation, resume monitoring, and mock rule enforcement.
 
 Acceptance criteria:
 
@@ -80,6 +83,8 @@ Acceptance criteria:
 - The workflow can branch to C enrichment when required data is missing.
 - The workflow pauses at a human gate when reconciliation is unresolved.
 - No target-system load step can run without an explicit policy checkpoint.
+- Rejected checkpoints cannot later be approved.
+- Target connectors cannot mutate trusted checkpoint records through aliases.
 
 ## Milestone 3: Observability And Eval Skeleton
 
@@ -89,6 +94,7 @@ Acceptance criteria:
 - `[ ]` Add eval runner skeleton with mock-model fixtures.
 - `[ ]` Add prompt, policy, and memory version fields to traces.
 - `[ ]` Add redaction tests for secrets.
+- `[ ]` Promote workflow pause/resume monitor events into generic trace schema.
 
 Acceptance criteria:
 

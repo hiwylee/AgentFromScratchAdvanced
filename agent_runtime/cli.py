@@ -10,7 +10,9 @@ from typing import Sequence
 from . import __version__
 from .loop import AgentLoop
 from .monitor import latest_status
+from .redaction import redact
 from .types import Budget
+from .workflow import WorkflowEngine
 
 
 DEFAULT_RUN_DIR = Path(".agent/runs")
@@ -32,6 +34,11 @@ def main(argv: Sequence[str] | None = None) -> int:
     status_parser = subparsers.add_parser("status", help="show latest run status")
     status_parser.add_argument("--run-dir", default=str(DEFAULT_RUN_DIR))
 
+    workflow_parser = subparsers.add_parser("workflow", help="run a mock workflow")
+    workflow_parser.add_argument("text", nargs="+", help="workflow request text")
+    workflow_parser.add_argument("--run-dir", default=str(DEFAULT_RUN_DIR))
+    workflow_parser.add_argument("--audit-log", default=str(DEFAULT_AUDIT_PATH))
+
     args = parser.parse_args(argv)
 
     if args.command == "ask":
@@ -43,6 +50,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         )
     if args.command == "status":
         return _status(Path(args.run_dir))
+    if args.command == "workflow":
+        return _workflow(args.text, Path(args.run_dir), Path(args.audit_log))
 
     parser.error(f"unknown command: {args.command}")
     return 2
@@ -68,3 +77,30 @@ def _status(run_dir: Path) -> int:
         return 1
     print(json.dumps(status, ensure_ascii=False, indent=2))
     return 0
+
+
+def _workflow(text_parts: Sequence[str], run_dir: Path, audit_path: Path) -> int:
+    user_text = " ".join(text_parts)
+    if not _is_supported_workflow_request(user_text):
+        print(
+            json.dumps(
+                redact({
+                    "state": "unsupported_workflow",
+                    "request_text": user_text,
+                    "supported_workflows": ["patent_asset_replacement_registration"],
+                }),
+                ensure_ascii=False,
+                indent=2,
+            )
+        )
+        return 2
+    # Milestone 2A supports the patent asset workflow as the first mock template.
+    engine = WorkflowEngine(run_root=run_dir, audit_path=audit_path)
+    result = engine.run_patent_asset_replacement(period="current_month")
+    result["request_text"] = user_text
+    print(json.dumps(redact(result), ensure_ascii=False, indent=2))
+    return 0
+
+
+def _is_supported_workflow_request(text: str) -> bool:
+    return "특허" in text and "대체" in text and "등록" in text
