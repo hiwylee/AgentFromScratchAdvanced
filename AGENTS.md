@@ -36,6 +36,11 @@ This repository is for building an agent runtime from scratch while using
   fits this project before implementing it.
 - Put stable project instructions here. Put detailed, evolving work plans in
   `docs/exec-plans/active/`.
+- Prefer prompts, policies, tool schemas, memory, and eval fixtures as
+  versioned data artifacts instead of hard-coded runtime constants when they
+  are expected to change frequently.
+- Treat audit logs, traces, and eval fixtures as first-class implementation
+  outputs, not optional diagnostics.
 
 ## Continuity Tracking
 
@@ -66,4 +71,5 @@ Read these first:
 5. `docs/design-docs/architecture.md`
 6. `docs/design-docs/database-natural-language.md`
 7. `docs/design-docs/oracle-adw-connection.md`
-8. `docs/exec-plans/active/0001-project-bootstrap.md`
+8. `docs/design-docs/self-evolution.md`
+9. `docs/exec-plans/active/0001-project-bootstrap.md`

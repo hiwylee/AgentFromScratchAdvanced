@@ -19,6 +19,10 @@ Oracle ADW natural-language data access as the first domain specialization.
   material are not committed.
 - Added Oracle ADW connection design and secret-handling rules.
 - Added continuity tracking files so work can resume after interruption.
+- Reviewed design feedback and promoted key risks into the roadmap:
+  observability, eval gates, prompt-as-data, append-only audit logs, compact
+  schema context, DB least privilege, memory provenance, drift detection, and
+  SQL safety edge cases.
 
 ## Next Action
 
@@ -28,6 +32,8 @@ Recommended starting point:
 
 - Rust core runtime.
 - Mock-model-first agent loop.
+- Prompt, policy, memory, and eval artifacts stored as data files.
+- Append-only audit events from the first executable milestone.
 - Oracle ADW connector design kept behind an interface until the core loop is
   testable.
 
@@ -39,6 +45,9 @@ Recommended starting point:
   driver?
 - Which read-only schema introspection queries are safe enough for the first
   connector milestone?
+- Which schema retrieval strategy should be used first for compact Oracle ADW
+  context?
+- Which eval fixture format should become the frozen golden set?
 
 ## Resume Checklist
 

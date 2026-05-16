@@ -17,3 +17,7 @@ direction and implementation changes, not every tiny edit.
 - Updated local `.env` `SQLCL_PATH` to the installed SQLcl path.
 - Added `.gitignore` and `.env.example`.
 - Added continuity tracking files for interrupted-session recovery.
+- Incorporated design-review feedback into the roadmap:
+  prompt-as-data, append-only audit logs, observability, eval skeleton, frozen
+  golden fixtures, memory provenance, drift detection, DB least privilege, and
+  compact schema context design.

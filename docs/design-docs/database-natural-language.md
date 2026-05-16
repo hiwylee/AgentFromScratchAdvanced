@@ -30,6 +30,51 @@ should be read-only:
   secret-bearing connection strings.
 - Use `DB_USER` / `DB_USER_PASS` for normal query work. Use admin credentials
   only for explicit setup or metadata tasks.
+- Treat database-level least privilege as the primary safety boundary. The
+  working user should have only the permissions needed for approved read-only
+  workflows.
+- Treat application-level SQL validation as a second safety layer, not the only
+  defense.
+- Block or explicitly review edge cases such as `SELECT ... FOR UPDATE`, DDL,
+  DML, procedural blocks, database links, resource-heavy hints, and functions
+  with side effects.
+
+## Intent And Planning
+
+User intent analysis is mandatory before database work. The intent stage should
+extract:
+
+- task type, such as lookup, aggregation, trend analysis, comparison, anomaly
+  check, or metadata exploration;
+- requested entities, metrics, dimensions, filters, time ranges, and output
+  format;
+- required context, such as schema, business glossary, or sample values;
+- ambiguity signals based on missing schema matches or undefined business terms;
+- safety level and whether the request can remain read-only.
+
+LLM self-reported confidence should not be trusted alone. Prefer deterministic
+signals such as missing glossary entries, unresolved tables, unresolved columns,
+or multiple equally plausible schema matches.
+
+For latency, the runtime may combine intent and initial plan generation in one
+structured model call, while keeping the output fields separate.
+
+## Compact Schema Context
+
+Large Oracle ADW environments can contain thousands of tables. The runtime
+should not send the entire schema to the model. Schema context should be built
+with a layered retrieval strategy:
+
+- start with curated high-value schemas, tables, and business glossary entries;
+- use embedding or keyword retrieval over table names, column names, comments,
+  and known business terms;
+- ask for table candidates first, then expand only the chosen tables with full
+  column and relationship details;
+- expose sample values only when needed and only after PII and sensitive-column
+  checks;
+- record which schema context was used for each answer.
+
+Compact schema context is a core accuracy feature, not an optimization.
 
 ## Harness Requirements
 
@@ -37,6 +82,15 @@ should be read-only:
 - Maintain natural-language question fixtures with expected SQL properties.
 - Test refusal behavior for unsafe requests.
 - Test ambiguity handling when the schema does not support a confident answer.
+- Maintain a frozen golden eval set that must not be edited to make a new
+  prompt, policy, or memory change pass.
+- Prefer execution-based evals, such as comparing result properties, over only
+  string-matching generated SQL.
+- Track prompt, policy, and memory versions for rollback.
+- Store memory entries with source, timestamp, author, confidence, and evidence
+  to reduce memory poisoning risk.
+- Add drift checks for repeated questions whose answers or query plans change
+  unexpectedly.
 
 ## Open Decisions
 
@@ -44,3 +98,4 @@ should be read-only:
 - Whether to use an existing SQL parser for validation.
 - How much sample data can be exposed to the model.
 - Whether domain glossary memory is configured manually or learned from usage.
+- Which frozen eval set should gate self-improvement changes.

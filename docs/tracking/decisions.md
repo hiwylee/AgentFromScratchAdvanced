@@ -27,3 +27,36 @@ agent state.
 
 Rationale: Oracle ADW workflows require real credentials. The harness must make
 secret handling a default constraint before code exists.
+
+## 2026-05-16: Prompt And Policy Are Data
+
+Decision: Keep prompts, policies, memory, eval fixtures, and tool schemas as
+versioned data artifacts where practical instead of burying them in compiled
+runtime code.
+
+Rationale: Early agent development requires frequent iteration. External data
+artifacts keep Rust viable without slowing prompt and policy experiments.
+
+## 2026-05-16: Record Self-Evolution Data Before Enabling Self-Evolution
+
+Decision: Add append-only audit and trace records early, but defer automated
+self-improvement until eval gates, provenance, and rollback exist.
+
+Rationale: Self-improvement is useful but risky. The project needs historical
+data for later improvement while preventing silent behavior drift.
+
+## 2026-05-16: Add Observability And Eval Before Oracle NL-to-SQL
+
+Decision: Insert an observability and eval skeleton before deeper Oracle ADW
+workflows and natural-language-to-SQL.
+
+Rationale: Schema retrieval and prompt changes will regress without structured
+traces, frozen evals, and redaction tests.
+
+## 2026-05-16: Database Least Privilege Is The Primary SQL Safety Boundary
+
+Decision: The Oracle ADW working user should be read-only and least-privileged;
+application-level SQL validation is a second layer.
+
+Rationale: Regex or parser validation can miss edge cases. DB permissions must
+make unsafe operations fail even if generated SQL slips through validation.
