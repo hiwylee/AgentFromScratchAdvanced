@@ -4,12 +4,19 @@ from __future__ import annotations
 
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
+from threading import Event
 from typing import Any, Literal
 
 
 Role = Literal["user", "assistant", "tool", "system"]
-ActionKind = Literal["final_answer", "ask_clarification", "inspect_schema", "refuse"]
-RunState = Literal["running", "completed", "failed", "cancelled", "timed_out"]
+ActionKind = Literal[
+    "final_answer",
+    "ask_clarification",
+    "inspect_schema",
+    "select_workflow",
+    "refuse",
+]
+RunState = Literal["running", "completed", "failed", "cancelled", "timed_out", "stopped"]
 
 
 def utc_now() -> str:
@@ -59,10 +66,34 @@ class FinalAnswer:
 @dataclass(frozen=True)
 class Budget:
     max_steps: int = 4
-    timeout_seconds: int = 30
+    timeout_seconds: float = 30
     token_budget: int = 4000
     cost_budget_usd: float = 0.0
     row_budget: int = 100
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
+
+
+class CancellationToken:
+    """Small thread-safe cancellation primitive for local runtime controls."""
+
+    def __init__(self) -> None:
+        self._event = Event()
+        self._reason = "cancelled"
+
+    @property
+    def is_cancelled(self) -> bool:
+        return self._event.is_set()
+
+    @property
+    def reason(self) -> str:
+        return self._reason
+
+    def cancel(self, reason: str = "cancelled") -> None:
+        clean_reason = reason.strip()
+        self._reason = clean_reason or "cancelled"
+        self._event.set()
+
+    def to_dict(self) -> dict[str, Any]:
+        return {"is_cancelled": self.is_cancelled, "reason": self.reason}

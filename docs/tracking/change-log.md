@@ -30,3 +30,11 @@ direction and implementation changes, not every tiny edit.
 - Expanded Milestone 1 with core message/action/observation/final-answer types,
   a mock model adapter, an `AgentLoop`, budget placeholders, run status files,
   and `agent status` for local monitoring.
+- Added workflow orchestration design for multi-system natural-language business
+  processes, including A/B source comparison, C-system enrichment, D-system
+  loading, reconciliation checkpoints, and human-in-the-loop gates.
+- Completed Milestone 1 runtime controls with max-step stopping, timeout checks,
+  cancellation token support, and focused runtime-control tests.
+- Added first-pass workflow intent recognition for patent asset replacement
+  registration requests, returning workflow template selection as the next
+  safe action.

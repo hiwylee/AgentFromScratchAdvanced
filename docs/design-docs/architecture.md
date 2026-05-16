@@ -15,6 +15,23 @@ The runtime should be split into narrow interfaces:
 - `EvalRunner`: runs regression fixtures before prompt, policy, or memory
   changes are accepted.
 - `BudgetManager`: tracks token, cost, row, and time budgets.
+- `WorkflowEngine`: executes versioned workflow templates as monitorable,
+  checkpointed plan graphs.
+- `ConnectorRegistry`: provides typed access to external systems behind policy
+  and audit boundaries.
+- `HumanGate`: pauses execution for review, approval, correction, or exception
+  handling.
+
+Workflow-oriented capabilities should be first-class because business requests
+can span multiple systems and multi-stage reconciliation:
+
+- `WorkflowTemplateRegistry`: versioned templates for known business workflows.
+- `WorkflowPlanner`: maps workflow intent into an executable graph.
+- `ReconciliationEngine`: validates records across source, comparison, and
+  enrichment systems.
+- `WorkflowStateStore`: persists checkpoints, step outputs, exceptions, and
+  human decisions.
+- `WorkflowReporter`: emits progress, review packets, and completion reports.
 
 Oracle ADW-focused capabilities should be modeled as dedicated components
 rather than ad hoc shell commands:
@@ -61,6 +78,21 @@ The first runtime should emit structured events for:
 These events should avoid secrets and should be suitable for both local
 debugging and future evaluation reports.
 
+## Workflow Execution Model
+
+Longer business requests should run as workflow graphs:
+
+- source lookups can run in parallel;
+- reconciliation waits for required inputs;
+- enrichment runs conditionally when fields or evidence are missing;
+- target-system writes or loads require explicit policy gates;
+- unresolved reconciliation failures pause at a human gate;
+- every step writes status, audit, and checkpoint records.
+
+The same model should support DB analysis workflows and multi-system business
+workflows, so database tools are connector-backed steps rather than special
+cases.
+
 ## Reference Areas In `../codex`
 
 Investigate these concepts before implementation:
@@ -83,3 +115,4 @@ Do not copy structure before confirming that the complexity is needed here.
 - Whether the first Oracle execution backend uses SQLcl subprocesses or a
   direct driver.
 - Prompt, policy, memory, and eval file formats.
+- First workflow template format and human-gate review packet format.

@@ -73,5 +73,6 @@ Read these first:
 6. `docs/design-docs/database-natural-language.md`
 7. `docs/design-docs/oracle-adw-connection.md`
 8. `docs/design-docs/self-evolution.md`
-9. `docs/reviews/2026-05-16-planner-developer-review.md`
-10. `docs/exec-plans/active/0001-project-bootstrap.md`
+9. `docs/design-docs/workflow-orchestration.md`
+10. `docs/reviews/2026-05-16-planner-developer-review.md`
+11. `docs/exec-plans/active/0001-project-bootstrap.md`

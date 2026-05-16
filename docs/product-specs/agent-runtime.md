@@ -19,6 +19,8 @@ iterate without requiring the user to write SQL by hand.
   schemas and produce grounded analysis steps.
 - Project maintainers who need the agent runtime itself to be observable,
   testable, and improvable over time.
+- Operations users who need natural-language help running controlled
+  multi-system workflows with review gates.
 
 ## Product Principles
 
@@ -30,6 +32,8 @@ iterate without requiring the user to write SQL by hand.
   mappings are ambiguous.
 - Improve with evidence: convert failures into audit records, eval fixtures,
   policy updates, or memory candidates.
+- Workflow-safe: multi-system operations must be checkpointed, monitorable, and
+  human-reviewable before target-system writes.
 
 ## Initial User Experience
 
@@ -69,6 +73,8 @@ Expected early output:
 9. Complex work: long-running task orchestration and subtask decomposition.
 10. Oracle ADW natural-language workflows: schema grounding, SQL planning,
     query validation, result explanation, and domain-specific memory.
+11. Multi-system business workflows: workflow templates, connector orchestration,
+    reconciliation, enrichment, target-system load, and human review gates.
 
 ## Non-Goals For The First Version
 
@@ -112,3 +118,23 @@ generic shell shortcut. The runtime should eventually include:
 - result summarization with links back to the executed query;
 - eval fixtures that pair natural-language questions with expected SQL and
   expected answer properties.
+
+## Business Workflow Direction
+
+The agent should eventually handle workflow requests such as:
+
+```text
+이번달 특허자산 대체 등록 진행해줘
+```
+
+The correct product behavior is not a single SQL query. It is a controlled
+workflow:
+
+- classify workflow intent;
+- select a versioned workflow template;
+- query source and comparison systems;
+- run multi-stage reconciliation;
+- enrich missing data from additional systems when needed;
+- pause for human review when reconciliation cannot be resolved safely;
+- load validated records into a target system only after policy gates pass;
+- produce a full audit and completion report.

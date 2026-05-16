@@ -38,6 +38,17 @@ class IntentTests(unittest.TestCase):
         self.assertEqual("blocked_write_request", intent.safety_level)
         self.assertEqual("refuse_or_request_explicit_safe_alternative", intent.next_action)
 
+    def test_patent_asset_request_is_workflow_intent(self):
+        intent = analyze_user_intent("이번달 특허자산 대체 등록 진행해줘")
+
+        self.assertEqual("workflow_execution", intent.intent_type)
+        self.assertEqual("patent_asset_replacement_registration", intent.task_type)
+        self.assertEqual("requires_checkpoint", intent.safety_level)
+        self.assertFalse(intent.requires_oracle_adw_context)
+        self.assertEqual(["patent_asset_replacement_registration"], intent.entities["workflow"])
+        self.assertIn("workflow_template", intent.required_context)
+        self.assertIn("human_approval_boundary", intent.ambiguities)
+
 
 class AuditTests(unittest.TestCase):
     def test_trace_and_audit_redact_sensitive_environment_values(self):
@@ -108,6 +119,17 @@ class AgentLoopTests(unittest.TestCase):
             self.assertEqual("blocked_write_request", result.intent["safety_level"])
             self.assertEqual("refuse", result.action["kind"])
             self.assertIn("read-only", result.final_answer["content"])
+
+    def test_agent_loop_selects_workflow_for_business_process(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            loop = AgentLoop(run_root=tmp_path / "runs", audit_path=tmp_path / "audit.jsonl")
+
+            result = loop.run("이번달 특허자산 대체 등록 진행해줘")
+
+            self.assertEqual("workflow_execution", result.intent["intent_type"])
+            self.assertEqual("select_workflow", result.action["kind"])
+            self.assertIn("workflow template", result.final_answer["content"])
 
 
 if __name__ == "__main__":

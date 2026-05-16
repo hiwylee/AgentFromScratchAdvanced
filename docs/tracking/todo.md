@@ -31,6 +31,7 @@
 - `[x]` Choose initial prompt, policy, memory, and eval artifact formats:
   Markdown and JSON.
 - `[?]` Choose schema retrieval strategy for compact Oracle ADW context.
+- `[?]` Choose workflow template format and human-gate review packet format.
 
 ## Milestone 1: Minimal Agent Loop
 
@@ -38,9 +39,9 @@
 - `[x]` Define message, action, observation, and final-answer types.
 - `[x]` Define structured user intent types.
 - `[x]` Implement a mock model adapter.
-- `[~]` Implement the basic agent loop and stop conditions.
+- `[x]` Implement the basic agent loop and stop conditions.
 - `[x]` Add append-only audit event recording.
-- `[ ]` Add cancellation and timeout primitives.
+- `[x]` Add cancellation and timeout primitives.
 - `[x]` Add token, cost, row, and latency budget placeholders.
 - `[x]` Add focused tests for intent and redaction behavior.
 - `[x]` Add a CLI entry point for structured intent analysis.
@@ -61,6 +62,24 @@ Acceptance criteria:
 - `[ ]` Add tool registry and validation.
 - `[ ]` Add retry and max-step limits.
 - `[ ]` Add observable progress reporting.
+
+## Milestone 2A: Workflow Orchestration Skeleton
+
+- `[x]` Define first-pass workflow intent fields.
+- `[ ]` Define workflow template artifact format.
+- `[ ]` Define workflow step graph data model.
+- `[ ]` Add mock connector interface for systems A/B/C/D.
+- `[ ]` Add deterministic reconciliation rule interface.
+- `[ ]` Add human-gate pause state and review packet format.
+- `[ ]` Add workflow status and audit events.
+
+Acceptance criteria:
+
+- A natural-language workflow request maps to a structured workflow intent.
+- A mock workflow can run A/B lookups in parallel and join for reconciliation.
+- The workflow can branch to C enrichment when required data is missing.
+- The workflow pauses at a human gate when reconciliation is unresolved.
+- No target-system load step can run without an explicit policy checkpoint.
 
 ## Milestone 3: Observability And Eval Skeleton
 

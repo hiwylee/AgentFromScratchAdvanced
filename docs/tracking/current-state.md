@@ -29,12 +29,22 @@ Oracle ADW natural-language data access as the first domain specialization.
 - Started Milestone 1 implementation as a uv-managed Python 3.12+ prototype:
   `agent ask <text>` now emits structured intent, monitorable run status,
   event output, and append-only audit records.
+- Added workflow orchestration architecture for natural-language business
+  requests that span A/B/C/D systems, reconciliation, enrichment, target-system
+  loading, and human-in-the-loop review.
+- Added first-pass workflow intent recognition for requests like
+  `이번달 특허자산 대체 등록 진행해줘`, returning `workflow_execution` and
+  `select_workflow_template` as the next action.
 
 ## Next Action
 
-Continue Milestone 1 by tightening stop conditions, cancellation/timeouts, and
-budget enforcement. Message/action/observation/final-answer types, mock model
-adapter boundary, and monitorable run status now exist.
+Milestone 1 runtime controls are now in place: stop conditions, timeout checks,
+cancellation token support, budget placeholders, message/action/observation
+types, mock model adapter boundary, and monitorable run status.
+
+Next implementation focus: prepare Milestone 2A workflow orchestration skeleton
+with mock connectors and human-gate state, while keeping Milestone 2 tool
+registry design aligned.
 
 Recommended starting point:
 
@@ -54,11 +64,13 @@ Recommended starting point:
 UV_CACHE_DIR=.uv-cache uv run --python 3.12 python -m unittest discover -s tests
 bin/agent ask "지난달 상품별 매출 추이를 보여줘" --run-dir /tmp/afs-runs-1 --audit-log /tmp/afs-audit-1.jsonl
 bin/agent ask "고객 테이블에서 오래된 데이터를 삭제해줘" --run-dir /tmp/afs-runs-2 --audit-log /tmp/afs-audit-2.jsonl
+bin/agent ask "이번달 특허자산 대체 등록 진행해줘" --run-dir /tmp/afs-workflow-intent2 --audit-log /tmp/afs-workflow-intent2.jsonl
 bin/agent status --run-dir /tmp/afs-runs-1
 bin/agent status --run-dir /tmp/afs-runs-2
+bin/agent status --run-dir /tmp/afs-workflow-intent2
 ```
 
-All commands passed.
+The latest full test run covered 13 tests and passed.
 
 ## Open Questions
 
@@ -73,6 +85,7 @@ All commands passed.
 - Which eval fixture format should become the frozen golden set?
 - Which artifact format should be used first for intent schemas and mock model
   fixtures? Initial decision: JSON schemas and Markdown prompts.
+- Which workflow template format and review packet format should be used first?
 
 ## Resume Checklist
 

@@ -13,6 +13,16 @@ class MockModel:
     version = "1"
 
     def choose_action(self, intent: UserIntent) -> Action:
+        if intent.intent_type == "workflow_execution":
+            return Action(
+                kind="select_workflow",
+                reason="The request requires a versioned workflow template and checkpointed execution.",
+                payload={
+                    "required_context": intent.required_context,
+                    "ambiguities": intent.ambiguities,
+                    "next_action": intent.next_action,
+                },
+            )
         if intent.safety_level == "blocked_write_request":
             return Action(
                 kind="refuse",

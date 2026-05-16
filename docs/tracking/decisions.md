@@ -88,3 +88,14 @@ Rationale: Rust is not installed in the current environment, and the earliest
 phase needs fast iteration over intent schemas, prompts, traces, and artifact
 formats. The design still keeps interfaces and artifacts separate so the core
 can be hardened or ported later.
+
+## 2026-05-16: Business Workflows Are First-Class Plan Graphs
+
+Decision: Multi-system business requests should be modeled as versioned
+workflow templates executed as checkpointed plan graphs, not as ad hoc tool
+chains.
+
+Rationale: Requests like patent asset replacement registration require source
+lookups, comparison, reconciliation, enrichment, target-system loading, and
+human review. Graph-based workflows make parallelism, checkpoints, human gates,
+and auditability explicit.

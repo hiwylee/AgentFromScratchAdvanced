@@ -18,6 +18,10 @@ should be read-only:
 6. execute with row and timeout limits;
 7. explain the result and show the query used.
 
+Database analysis should also be usable inside larger workflows. A workflow
+step may use Oracle ADW to retrieve source records, compare datasets, evaluate
+reconciliation rules, enrich missing context, or produce review evidence.
+
 ## Safety Defaults
 
 - Read-only operations by default.
@@ -91,6 +95,8 @@ Compact schema context is a core accuracy feature, not an optimization.
   to reduce memory poisoning risk.
 - Add drift checks for repeated questions whose answers or query plans change
   unexpectedly.
+- Add workflow eval fixtures where database analysis is one step inside a
+  larger reconciliation process.
 
 ## Open Decisions
 

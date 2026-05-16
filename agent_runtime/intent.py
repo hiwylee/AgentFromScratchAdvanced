@@ -41,6 +41,31 @@ DB_KEYWORDS = (
     "상품",
 )
 
+WORKFLOW_KEYWORDS = (
+    "진행",
+    "등록",
+    "처리",
+    "workflow",
+    "work flow",
+    "프로세스",
+    "정합성",
+    "검증",
+    "적재",
+)
+
+PATENT_ASSET_KEYWORDS = (
+    "특허자산",
+    "특허",
+    "patent asset",
+    "patent",
+)
+
+REPLACEMENT_KEYWORDS = (
+    "대체",
+    "replacement",
+    "replace",
+)
+
 METRIC_KEYWORDS = {
     "revenue": ("매출", "revenue", "sales", "amount"),
     "count": ("건수", "수", "count", "number"),
@@ -80,6 +105,38 @@ class UserIntent:
 
 def analyze_user_intent(text: str) -> UserIntent:
     normalized = text.casefold()
+    requires_workflow = any(keyword in normalized for keyword in WORKFLOW_KEYWORDS)
+    patent_asset = any(keyword in normalized for keyword in PATENT_ASSET_KEYWORDS)
+    replacement = any(keyword in normalized for keyword in REPLACEMENT_KEYWORDS)
+    if requires_workflow or (patent_asset and replacement):
+        workflow_name = (
+            "patent_asset_replacement_registration"
+            if patent_asset and replacement
+            else "business_workflow"
+        )
+        return UserIntent(
+            intent_type="workflow_execution",
+            task_type=workflow_name,
+            safety_level="requires_checkpoint",
+            requires_oracle_adw_context=False,
+            entities={
+                "workflow": [workflow_name],
+                "periods": ["current_month"] if "이번달" in normalized else [],
+            },
+            required_context=[
+                "workflow_template",
+                "connector_registry",
+                "reconciliation_rules",
+                "human_gate_policy",
+            ],
+            ambiguities=[
+                "source_system_mapping",
+                "target_system_policy",
+                "human_approval_boundary",
+            ],
+            next_action="select_workflow_template",
+        )
+
     requires_db = any(keyword in normalized for keyword in DB_KEYWORDS)
     unsafe_write = any(keyword in normalized for keyword in WRITE_KEYWORDS)
 
