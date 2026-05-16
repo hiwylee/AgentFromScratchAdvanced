@@ -19,6 +19,7 @@ This repository is for building an agent runtime from scratch while using
 - `docs/exec-plans/active/`: current implementation plans.
 - `docs/exec-plans/completed/`: finished plans with outcomes.
 - `docs/tracking/`: current state, todo list, decisions, and change log.
+- `docs/reviews/`: cross-functional reviews and PM reflection notes.
 - `docs/references/`: distilled notes from `../codex` or external material.
 - `docs/generated/`: generated artifacts only; do not hand-edit unless noted.
 
@@ -72,4 +73,5 @@ Read these first:
 6. `docs/design-docs/database-natural-language.md`
 7. `docs/design-docs/oracle-adw-connection.md`
 8. `docs/design-docs/self-evolution.md`
-9. `docs/exec-plans/active/0001-project-bootstrap.md`
+9. `docs/reviews/2026-05-16-planner-developer-review.md`
+10. `docs/exec-plans/active/0001-project-bootstrap.md`

@@ -21,3 +21,6 @@ direction and implementation changes, not every tiny edit.
   prompt-as-data, append-only audit logs, observability, eval skeleton, frozen
   golden fixtures, memory provenance, drift detection, DB least privilege, and
   compact schema context design.
+- Added planner/developer review notes and PM decisions. The MVP is now
+  intent-first with traceability and minimal Oracle ADW read-only connectivity;
+  full NL-to-SQL is explicitly later.

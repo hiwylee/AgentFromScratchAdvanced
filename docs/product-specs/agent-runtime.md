@@ -11,6 +11,26 @@ Autonomous Data Warehouse data: the agent should help users inspect schemas,
 ask questions in plain language, generate safe queries, explain results, and
 iterate without requiring the user to write SQL by hand.
 
+## Primary Users
+
+- Technical analysts who know the business question but do not want to hand
+  write every SQL query.
+- Developers or data engineers who need a safe agent to inspect Oracle ADW
+  schemas and produce grounded analysis steps.
+- Project maintainers who need the agent runtime itself to be observable,
+  testable, and improvable over time.
+
+## Product Principles
+
+- Intent first: do not jump from user text directly to SQL or tools.
+- Grounded answers: every database answer should be tied to schema context,
+  query text, assumptions, and result evidence.
+- Safe by default: use read-only workflows and least-privileged database access.
+- Explain uncertainty: ask clarifying questions when business terms or schema
+  mappings are ambiguous.
+- Improve with evidence: convert failures into audit records, eval fixtures,
+  policy updates, or memory candidates.
+
 ## Initial User Experience
 
 The first usable version should run from a CLI:
@@ -20,6 +40,21 @@ agent "summarize this repository"
 ```
 
 It should show the steps it takes, tool calls it performs, and the final answer.
+
+For Oracle ADW questions, the first visible capability should be structured
+intent analysis:
+
+```text
+agent ask "지난달 상품별 매출 추이를 보여줘"
+```
+
+Expected early output:
+
+- detected intent type;
+- extracted metric, dimension, time range, and output request;
+- missing context or ambiguity;
+- safety classification;
+- next action, such as inspect schema or ask a clarification question.
 
 ## Milestone Ladder
 
@@ -50,6 +85,19 @@ It should show the steps it takes, tool calls it performs, and the final answer.
 - The core loop is covered by tests.
 - The state transitions are inspectable.
 - The design leaves room for real model and tool adapters.
+- User intent is represented as structured data, not only prose.
+- Audit and trace records are produced without exposing secrets.
+- The CLI can show whether a request needs Oracle ADW context before any
+  database connection is attempted.
+
+## MVP Boundary
+
+The MVP is not full autonomous natural-language-to-SQL. The MVP is a reliable
+agent foundation that can classify intent, explain its next action, record
+auditable state, and safely perform a minimal Oracle ADW read-only smoke query.
+
+Full NL-to-SQL requires compact schema context, eval gates, SQL validation, and
+result explanation to be in place first.
 
 ## Oracle ADW Specialization Direction
 

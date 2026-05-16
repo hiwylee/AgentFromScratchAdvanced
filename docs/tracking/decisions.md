@@ -60,3 +60,21 @@ application-level SQL validation is a second layer.
 
 Rationale: Regex or parser validation can miss edge cases. DB permissions must
 make unsafe operations fail even if generated SQL slips through validation.
+
+## 2026-05-16: MVP Is Intent-First, Not Full NL-To-SQL
+
+Decision: The MVP should prove the agent runtime, structured user intent,
+auditable traces, and minimal Oracle ADW read-only connectivity before full
+natural-language-to-SQL.
+
+Rationale: NL-to-SQL accuracy depends on schema context, eval gates, and safety
+policy. Shipping intent analysis first creates a smaller, testable product
+slice.
+
+## 2026-05-16: SQLcl Is Hidden Behind An Oracle Connector Interface
+
+Decision: Use SQLcl first for Oracle ADW execution, but keep subprocess details
+behind a connector interface.
+
+Rationale: SQLcl is available locally and matches the immediate environment,
+while an interface keeps the option open for a direct Oracle driver later.

@@ -23,6 +23,9 @@ Oracle ADW natural-language data access as the first domain specialization.
   observability, eval gates, prompt-as-data, append-only audit logs, compact
   schema context, DB least privilege, memory provenance, drift detection, and
   SQL safety edge cases.
+- Ran a planner/developer review and PM reflection. The MVP is now scoped as an
+  intent-first agent foundation with audit traces and minimal Oracle ADW
+  read-only connectivity, not full autonomous NL-to-SQL.
 
 ## Next Action
 
@@ -34,6 +37,8 @@ Recommended starting point:
 - Mock-model-first agent loop.
 - Prompt, policy, memory, and eval artifacts stored as data files.
 - Append-only audit events from the first executable milestone.
+- `agent ask <text>` should first prove structured intent analysis and next
+  action selection.
 - Oracle ADW connector design kept behind an interface until the core loop is
   testable.
 
@@ -48,6 +53,8 @@ Recommended starting point:
 - Which schema retrieval strategy should be used first for compact Oracle ADW
   context?
 - Which eval fixture format should become the frozen golden set?
+- Which artifact format should be used first for intent schemas and mock model
+  fixtures?
 
 ## Resume Checklist
 

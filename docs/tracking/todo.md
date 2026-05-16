@@ -16,6 +16,7 @@
 - `[x]` Add Oracle ADW connection design.
 - `[x]` Add `.gitignore` and `.env.example`.
 - `[x]` Add continuity tracking files.
+- `[x]` Add planner/developer review and PM reflection.
 - `[ ]` Resolve normal worktree `.git` setup if the read-only mount is removed.
 
 ## Implementation Decisions
@@ -42,6 +43,14 @@
 - `[ ]` Add focused tests for state transitions.
 - `[ ]` Add a CLI entry point that can run with the mock model.
 
+Acceptance criteria:
+
+- `agent ask <text>` runs with no network dependency in mock mode.
+- The command outputs structured intent and next action.
+- A trace file and append-only audit record are created.
+- Secret redaction tests pass.
+- Unit tests cover at least one DB-analysis intent and one non-DB intent.
+
 ## Milestone 2: Tool Loop
 
 - `[ ]` Define a structured tool interface.
@@ -58,6 +67,13 @@
 - `[ ]` Add prompt, policy, and memory version fields to traces.
 - `[ ]` Add redaction tests for secrets.
 
+Acceptance criteria:
+
+- A frozen golden eval directory exists.
+- Mock evals can run locally without credentials.
+- Redaction tests fail if known secret-shaped values appear in traces.
+- Trace records include artifact versions.
+
 ## Milestone 4: Oracle ADW Read-Only Foundation
 
 - `[ ]` Load Oracle ADW config from environment variables.
@@ -70,6 +86,15 @@
   multi-statement input.
 - `[ ]` Add schema introspection queries.
 - `[ ]` Add tests with fixtures that do not require real credentials.
+
+Acceptance criteria:
+
+- SQLcl version check succeeds.
+- Wallet path checks never print wallet contents.
+- Working-user smoke query can run read-only.
+- Admin credentials are not used by default.
+- Query execution logs contain no passwords, wallet passwords, or full
+  secret-bearing connection strings.
 
 ## Milestone 5: Compact Schema Context
 

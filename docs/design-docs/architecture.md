@@ -37,6 +37,15 @@ Prompts, policies, tool schemas, and memory should be data files
 are expected to change often. This keeps prompt and policy iteration fast even
 if the core runtime is implemented in Rust.
 
+Use adapter boundaries early:
+
+- SQLcl is the first Oracle execution backend, but callers should depend on an
+  Oracle connector interface rather than subprocess details.
+- The first model can be a mock, but the agent loop should depend on a model
+  interface rather than fixture-specific behavior.
+- Intent analysis should produce structured data that downstream planning,
+  policy, and reporting can consume.
+
 ## Observability From The Start
 
 The first runtime should emit structured events for:
