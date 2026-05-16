@@ -146,3 +146,24 @@ query constants before enabling real database execution.
 Rationale: Secrets, wallet handling, SQL safety, audit records, timeouts, row
 limits, and SQLcl subprocess behavior need tests before the runtime can safely
 connect to ADW.
+
+## 2026-05-16: Admin Creates The Working User Through A Separate Setup Boundary
+
+Decision: `ADMIN_USER` may provision `DB_USER`, but this must be implemented as
+an explicit admin setup workflow, separate from the normal read-only connector.
+The read-only connector must never fall back to admin credentials. Dry-run setup
+plan generation requires admin setup configuration to be present, but still does
+not embed or print admin passwords.
+
+Rationale: Admin credentials are powerful enough to change the database. Setup
+needs stricter validation, audit, redaction, idempotency, and approval controls
+than natural-language read-only analysis.
+
+## 2026-05-16: Use SH Before SSB For First DB Analysis Dataset
+
+Decision: Prefer Oracle `SH` sample data first, and keep `SSB` as the later
+benchmark/stress dataset.
+
+Rationale: `SH` has richer business semantics for natural-language analysis:
+sales, products, customers, channels, and time. `SSB` is useful later for
+larger star-schema benchmark tests.

@@ -64,6 +64,57 @@ SCHEMA_INTROSPECTION_QUERIES = {
     "comments": SCHEMA_COMMENTS_QUERY,
 }
 
+SAMPLE_SCHEMA_PROFILE_QUERY = """
+SELECT
+    owner,
+    table_name,
+    num_rows
+FROM all_tables
+WHERE owner IN ('SH', 'SSB')
+ORDER BY owner, table_name
+""".strip()
+
+SH_REQUIRED_TABLES = frozenset(
+    {
+        "CHANNELS",
+        "CUSTOMERS",
+        "PRODUCTS",
+        "SALES",
+        "TIMES",
+    }
+)
+
+SSB_REQUIRED_TABLES = frozenset(
+    {
+        "CUSTOMER",
+        "DWDATE",
+        "LINEORDER",
+        "PART",
+        "SUPPLIER",
+    }
+)
+
+PROTECTED_WORKING_USER_NAMES = frozenset(
+    {
+        "ADMIN",
+        "ANONYMOUS",
+        "APEX_PUBLIC_USER",
+        "CTXSYS",
+        "DBSNMP",
+        "GSMADMIN_INTERNAL",
+        "MDSYS",
+        "ORDDATA",
+        "ORDSYS",
+        "OUTLN",
+        "SH",
+        "SSB",
+        "SYS",
+        "SYSTEM",
+        "WMSYS",
+        "XDB",
+    }
+)
+
 BLOCKED_WRITE_OR_ADMIN_TOKENS = frozenset(
     {
         "ALTER",
@@ -268,6 +319,31 @@ class SqlPolicyResult:
     allowed: bool
     code: str
     reason: str
+
+
+@dataclass(frozen=True)
+class AdminProvisioningPlan:
+    admin_user: str
+    working_user: str
+    password_placeholder: str
+    sample_schema: str
+    statements: tuple[str, ...]
+    warnings: tuple[str, ...] = ()
+
+    def to_redacted_dict(self) -> dict[str, object]:
+        return redact(asdict(self))
+
+
+@dataclass(frozen=True)
+class SampleDatasetRecommendation:
+    selected: str
+    reason: str
+    available: dict[str, bool]
+    table_counts: dict[str, int]
+    missing_required_tables: dict[str, tuple[str, ...]]
+
+    def to_dict(self) -> dict[str, object]:
+        return asdict(self)
 
 
 SqlclRunner = Callable[[list[str]], SqlclRunResult]
@@ -506,6 +582,98 @@ def require_read_only_sql(sql: str) -> None:
         raise ValueError(f"{result.code}: {result.reason}")
 
 
+def build_working_user_provisioning_plan(
+    config: OracleAdwConfig,
+    *,
+    sample_schema: str,
+    password_placeholder: str = "__DB_USER_PASS__",
+    create_private_synonyms: bool = True,
+) -> AdminProvisioningPlan:
+    admin_user = _required_identifier(config.admin_user, "ADMIN_USER")
+    working_user = _required_working_user_identifier(config.db_user)
+    selected_schema = _required_sample_schema(sample_schema)
+    clean_placeholder = _required_password_placeholder(password_placeholder)
+    if not config.admin_user_pass:
+        raise ValueError("ADMIN_USER_PASS is required to create the working user")
+    if not config.db_user_pass:
+        raise ValueError("DB_USER_PASS is required but must not be embedded in provisioning statements")
+
+    required_tables = _required_tables_for_sample_schema(selected_schema)
+    synonym_statements = (
+        tuple(
+            f"CREATE OR REPLACE SYNONYM {working_user}.{table_name} FOR {selected_schema}.{table_name}"
+            for table_name in required_tables
+        )
+        if create_private_synonyms
+        else ()
+    )
+    statements = (
+        f"CREATE USER {working_user} IDENTIFIED BY \"{clean_placeholder}\"",
+        f"GRANT CREATE SESSION TO {working_user}",
+        f"ALTER USER {working_user} QUOTA 0 ON DATA",
+        *(
+            f"GRANT SELECT ON {selected_schema}.{table_name} TO {working_user}"
+            for table_name in required_tables
+        ),
+        *synonym_statements,
+    )
+    return AdminProvisioningPlan(
+        admin_user=admin_user,
+        working_user=working_user,
+        password_placeholder=clean_placeholder,
+        sample_schema=selected_schema,
+        statements=tuple(statements),
+        warnings=(
+            "Execute only through an admin-approved setup workflow.",
+            "Replace the password placeholder only inside the SQLcl execution boundary.",
+            "Do not log rendered DDL that contains the real password.",
+            "Private synonyms are created so read-only analysis SQL can avoid schema-qualified dotted references.",
+        ),
+    )
+
+
+def recommend_sample_dataset(table_rows: list[Mapping[str, object]]) -> SampleDatasetRecommendation:
+    tables_by_owner: dict[str, set[str]] = {"SH": set(), "SSB": set()}
+    for row in table_rows:
+        owner = str(_mapping_value_case_insensitive(row, "owner", "")).upper()
+        table_name = str(_mapping_value_case_insensitive(row, "table_name", "")).upper()
+        if owner in tables_by_owner and table_name:
+            tables_by_owner[owner].add(table_name)
+
+    missing = {
+        "SH": tuple(sorted(SH_REQUIRED_TABLES - tables_by_owner["SH"])),
+        "SSB": tuple(sorted(SSB_REQUIRED_TABLES - tables_by_owner["SSB"])),
+    }
+    available = {
+        "SH": not missing["SH"],
+        "SSB": not missing["SSB"],
+    }
+    table_counts = {owner: len(tables) for owner, tables in tables_by_owner.items()}
+    if available["SH"]:
+        return SampleDatasetRecommendation(
+            selected="SH",
+            reason="SH is preferred for natural-language business analytics because it has sales, product, customer, channel, and time dimensions.",
+            available=available,
+            table_counts=table_counts,
+            missing_required_tables=missing,
+        )
+    if available["SSB"]:
+        return SampleDatasetRecommendation(
+            selected="SSB",
+            reason="SSB is available and suitable for star-schema query benchmarks when SH is not present.",
+            available=available,
+            table_counts=table_counts,
+            missing_required_tables=missing,
+        )
+    return SampleDatasetRecommendation(
+        selected="none",
+        reason="Neither SH nor SSB has the required core tables visible to the current account.",
+        available=available,
+        table_counts=table_counts,
+        missing_required_tables=missing,
+    )
+
+
 class OracleAdwReadOnlyConnector:
     """Read-only Oracle ADW boundary with real execution intentionally closed."""
 
@@ -543,6 +711,60 @@ def _empty_to_none(value: str | None) -> str | None:
         return None
     stripped = value.strip()
     return stripped or None
+
+
+def _required_identifier(value: str | None, env_name: str) -> str:
+    if not value:
+        raise ValueError(f"{env_name} is required")
+    normalized = value.strip().upper()
+    if not re.fullmatch(r"[A-Z][A-Z0-9_$#]{0,127}", normalized):
+        raise ValueError(f"{env_name} must be a simple Oracle identifier")
+    return normalized
+
+
+def _required_working_user_identifier(value: str | None) -> str:
+    working_user = _required_identifier(value, "DB_USER")
+    if working_user in PROTECTED_WORKING_USER_NAMES:
+        raise ValueError("DB_USER must not be an administrative, system, or sample schema name")
+    return working_user
+
+
+def _required_sample_schema(value: str) -> str:
+    normalized = value.strip().upper()
+    if normalized not in {"SH", "SSB"}:
+        raise ValueError("sample_schema must be SH or SSB")
+    return normalized
+
+
+def _required_password_placeholder(value: str) -> str:
+    if not value or not value.strip():
+        raise ValueError("password_placeholder is required")
+    placeholder = value.strip()
+    if not re.fullmatch(r"__[A-Z0-9_]+__", placeholder):
+        raise ValueError("password_placeholder must be a symbolic __NAME__ token")
+    return placeholder
+
+
+def _required_tables_for_sample_schema(sample_schema: str) -> tuple[str, ...]:
+    if sample_schema == "SH":
+        return tuple(sorted(SH_REQUIRED_TABLES))
+    if sample_schema == "SSB":
+        return tuple(sorted(SSB_REQUIRED_TABLES))
+    raise ValueError("sample_schema must be SH or SSB")
+
+
+def _mapping_value_case_insensitive(
+    row: Mapping[str, object], key: str, default: object = None
+) -> object:
+    if key in row:
+        return row[key]
+    upper_key = key.upper()
+    if upper_key in row:
+        return row[upper_key]
+    lower_key = key.lower()
+    if lower_key in row:
+        return row[lower_key]
+    return default
 
 
 def _has_sqlcl_slash_block(sql: str) -> bool:
@@ -836,15 +1058,20 @@ def _first_blocked_token(upper_sql: str) -> str | None:
 
 __all__ = [
     "OracleAdwConfig",
+    "AdminProvisioningPlan",
     "OracleAdwReadOnlyConnector",
     "SCHEMA_COLUMNS_QUERY",
     "SCHEMA_COMMENTS_QUERY",
     "SCHEMA_INTROSPECTION_QUERIES",
     "SCHEMA_TABLES_QUERY",
+    "SAMPLE_SCHEMA_PROFILE_QUERY",
+    "SampleDatasetRecommendation",
     "SqlPolicyResult",
     "SqlclRunResult",
     "SqlclStatus",
     "WalletPathStatus",
+    "build_working_user_provisioning_plan",
+    "recommend_sample_dataset",
     "require_read_only_sql",
     "resolve_sqlcl_path",
     "validate_read_only_sql",

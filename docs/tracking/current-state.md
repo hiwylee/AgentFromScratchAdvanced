@@ -59,6 +59,14 @@ Oracle ADW natural-language data access as the first domain specialization.
   environment configuration loading, redacted SQLcl status verification, wallet
   path metadata checks, read-only SQL policy validation, schema introspection
   query constants, and fixture-only tests. Real ADW execution is still closed.
+- Added a dry-run admin provisioning plan for creating the working `DB_USER`
+  from `ADMIN_USER`. The plan requires admin setup configuration, validates the
+  working username, rejects protected account/schema names, keeps the real
+  password out of generated statements, grants object-level read access to the
+  selected sample schema, and creates private synonyms so read-only queries can
+  avoid schema-qualified dotted references.
+- Chose `SH` as the first sample dataset for natural-language database
+  analysis, with `SSB` reserved for later benchmark and stress tests.
 - Reflected senior review blockers for the parallel Milestone 2-4 work:
   Oracle policy now blocks `--+` line hints, package/unallowlisted function
   calls, and SQLcl timeout escapes; eval secret checks filter low-signal common
@@ -87,12 +95,15 @@ types, mock model adapter boundary, and monitorable run status.
 
 Next implementation focus: finish Milestone 2 tool loop integration into
 `AgentLoop`, wire workflow pause/resume records into the generic trace schema,
-and design the remaining Milestone 4 SQLcl execution path. Persistent workflow
+and design the remaining Milestone 4 SQLcl execution/provisioning apply path.
+Persistent workflow
 approval/resume and real target-system writes must remain closed until signed
 or hashed checkpoint persistence, approval authorization, idempotency, and
 replay protection are designed. Real ADW execution must remain closed until
 SQLcl credential passing, timeouts, result limits, and audit redaction are
-specified and tested.
+specified and tested. Real admin provisioning apply must also remain closed
+until idempotency checks, compensation behavior, and redacted audit events are
+implemented.
 
 Recommended starting point:
 
@@ -121,8 +132,8 @@ bin/agent status --run-dir /tmp/afs-runs-2
 bin/agent status --run-dir /tmp/afs-workflow-intent2
 ```
 
-The latest full test run covered 60 tests and passed. The latest focused
-Milestone 2-4 test run covered 24 tests and passed. The latest workflow smoke returned
+The latest full test run covered 67 tests and passed. The latest focused
+Oracle ADW test run covered 19 tests and passed. The latest workflow smoke returned
 `checkpoint_required` and blocked target-system D loading.
 
 ## Open Questions

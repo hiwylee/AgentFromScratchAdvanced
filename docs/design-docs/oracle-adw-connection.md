@@ -62,6 +62,50 @@ The first Oracle ADW connector should:
 5. connect as admin only for explicit administrative workflows;
 6. enforce read-only query policy for natural-language tasks.
 
+## Admin Provisioning Direction
+
+`ADMIN_USER` is allowed to create and provision the normal working account, but
+admin provisioning is a separate setup boundary from read-only query execution.
+The read-only connector must never fall back to admin credentials.
+
+The first implementation exposes a dry-run admin-executable provisioning plan
+only. It generates structured statements from validated inputs and keeps real
+SQLcl execution closed until credential passing, timeout behavior, output
+capture, audit redaction, idempotency checks, and compensation behavior are
+implemented.
+
+Provisioning rules:
+
+- validate `DB_USER` as a simple unquoted Oracle identifier;
+- reject administrative, system, and sample-schema names for `DB_USER`;
+- require `ADMIN_USER` and `ADMIN_USER_PASS` to be configured before generating
+  an admin setup plan;
+- require `DB_USER_PASS` but keep it out of generated/loggable statements;
+- use a symbolic password placeholder in dry-run output;
+- grant only `CREATE SESSION` and object-level `SELECT` on the selected sample
+  schema tables;
+- create private working-user synonyms for selected sample tables so natural
+  language queries can avoid schema-qualified dotted references;
+- do not create public synonyms or grant `DBA`, `RESOURCE`, `ANY` privileges,
+  package execution, DDL, or write access.
+
+Actual apply must be explicit, auditable, redacted, and idempotent. Re-running
+setup should report created/updated/already-compliant rather than silently
+broadening privileges.
+
+## Sample Dataset Choice
+
+Use `SH` first and `SSB` second.
+
+`SH` is preferred for the first natural-language database analysis milestone
+because its sales history schema has more business-friendly entities: sales,
+products, customers, channels, and time. These map directly to prompts such as
+product sales trends and metric/dimension ambiguity.
+
+`SSB` remains useful later as a star-schema benchmark and stress dataset for
+row limits, timeouts, and cost controls. The first SSB profile uses
+`LINEORDER`, `CUSTOMER`, `SUPPLIER`, `PART`, and `DWDATE`.
+
 ## Milestone 4 Foundation Skeleton
 
 `agent_runtime/oracle_adw.py` now defines the pre-connection foundation for

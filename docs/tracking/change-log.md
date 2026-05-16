@@ -95,3 +95,12 @@ direction and implementation changes, not every tiny edit.
   including slash lines with trailing text or block comments.
 - Moved SQLcl slash, blank-line, and command-line gates to raw input lines so
   unterminated strings or quoted identifiers cannot hide SQLcl commands.
+- Added dry-run admin provisioning plan generation for creating the working
+  `DB_USER` from `ADMIN_USER`, with validated identifiers, symbolic password
+  placeholders, object-level SH/SSB grants, and private synonyms for sample
+  tables.
+- Tightened the provisioning plan to require admin setup configuration, reject
+  protected working usernames, use SSB `DWDATE`, and accept Oracle-style
+  uppercase result keys from schema profile rows.
+- Chose `SH` as the first natural-language DB analysis dataset and `SSB` as
+  the later benchmark/stress dataset.

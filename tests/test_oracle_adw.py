@@ -8,8 +8,11 @@ from pathlib import Path
 from agent_runtime.oracle_adw import (
     OracleAdwConfig,
     OracleAdwReadOnlyConnector,
+    SAMPLE_SCHEMA_PROFILE_QUERY,
     SCHEMA_INTROSPECTION_QUERIES,
     SqlclRunResult,
+    build_working_user_provisioning_plan,
+    recommend_sample_dataset,
     validate_read_only_sql,
     verify_sqlcl,
     verify_wallet_paths,
@@ -137,6 +140,132 @@ class OracleAdwWalletTests(unittest.TestCase):
             redacted = status.to_redacted_dict()
             self.assertNotIn("do-not-read-this-secret", str(redacted))
             self.assertNotIn("wallet-secret", str(redacted))
+
+
+class OracleAdwProvisioningTests(unittest.TestCase):
+    def test_build_working_user_plan_for_sh_uses_placeholders_and_private_synonyms(self):
+        config = OracleAdwConfig(
+            admin_user="ADMIN",
+            admin_user_pass="admin-secret",
+            db_user="agent_ro",
+            db_user_pass="db-secret",
+        )
+
+        plan = build_working_user_provisioning_plan(config, sample_schema="sh")
+        rendered = "\n".join(plan.statements)
+
+        self.assertEqual("AGENT_RO", plan.working_user)
+        self.assertEqual("ADMIN", plan.admin_user)
+        self.assertEqual("SH", plan.sample_schema)
+        self.assertIn('CREATE USER AGENT_RO IDENTIFIED BY "__DB_USER_PASS__"', plan.statements)
+        self.assertIn("GRANT CREATE SESSION TO AGENT_RO", plan.statements)
+        self.assertIn("GRANT SELECT ON SH.SALES TO AGENT_RO", plan.statements)
+        self.assertIn("CREATE OR REPLACE SYNONYM AGENT_RO.SALES FOR SH.SALES", plan.statements)
+        self.assertNotIn("db-secret", rendered)
+        self.assertNotIn("admin-secret", rendered)
+        self.assertNotIn("PUBLIC SYNONYM", rendered)
+
+    def test_build_working_user_plan_for_ssb_uses_dwdate_and_can_skip_synonyms(self):
+        config = OracleAdwConfig(
+            admin_user="ADMIN",
+            admin_user_pass="admin-secret",
+            db_user="agent_ro",
+            db_user_pass="db-secret",
+        )
+
+        plan = build_working_user_provisioning_plan(
+            config,
+            sample_schema="SSB",
+            create_private_synonyms=False,
+        )
+        rendered = "\n".join(plan.statements)
+
+        self.assertIn("GRANT SELECT ON SSB.DWDATE TO AGENT_RO", plan.statements)
+        self.assertNotIn("SSB.DATES", rendered)
+        self.assertNotIn("CREATE OR REPLACE SYNONYM", rendered)
+
+    def test_build_working_user_plan_rejects_unsafe_identifiers_and_placeholders(self):
+        bad_users = [
+            "agent ro",
+            "agent;drop",
+            '"AGENT"',
+            "SH.AGENT",
+            "/",
+            "ADMIN",
+            "SYS",
+            "SYSTEM",
+            "SH",
+            "SSB",
+        ]
+        for user in bad_users:
+            with self.subTest(user=user):
+                with self.assertRaises(ValueError):
+                    build_working_user_provisioning_plan(
+                        OracleAdwConfig(
+                            admin_user="ADMIN",
+                            admin_user_pass="admin-secret",
+                            db_user=user,
+                            db_user_pass="db-secret",
+                        ),
+                        sample_schema="SH",
+                    )
+
+        with self.assertRaises(ValueError):
+            build_working_user_provisioning_plan(
+                OracleAdwConfig(
+                    admin_user="ADMIN",
+                    admin_user_pass="admin-secret",
+                    db_user="AGENT_RO",
+                    db_user_pass="db-secret",
+                ),
+                sample_schema="SH",
+                password_placeholder='bad"placeholder',
+            )
+
+        with self.assertRaises(ValueError):
+            build_working_user_provisioning_plan(
+                OracleAdwConfig(
+                    admin_user="ADMIN",
+                    admin_user_pass="admin-secret",
+                    db_user="AGENT_RO",
+                    db_user_pass="db-secret",
+                ),
+                sample_schema="HR",
+            )
+
+    def test_build_working_user_plan_requires_admin_boundary_configuration(self):
+        with self.assertRaises(ValueError):
+            build_working_user_provisioning_plan(
+                OracleAdwConfig(db_user="AGENT_RO", db_user_pass="db-secret"),
+                sample_schema="SH",
+            )
+
+        with self.assertRaises(ValueError):
+            build_working_user_provisioning_plan(
+                OracleAdwConfig(admin_user="ADMIN", db_user="AGENT_RO", db_user_pass="db-secret"),
+                sample_schema="SH",
+            )
+
+    def test_build_working_user_plan_requires_password_without_embedding_it(self):
+        with self.assertRaises(ValueError):
+            build_working_user_provisioning_plan(
+                OracleAdwConfig(admin_user="ADMIN", admin_user_pass="admin-secret", db_user="AGENT_RO"),
+                sample_schema="SH",
+            )
+
+    def test_recommend_sample_dataset_prefers_sh_then_ssb(self):
+        sh_rows = [{"owner": "SH", "table_name": table_name} for table_name in ("SALES", "PRODUCTS", "CUSTOMERS", "TIMES", "CHANNELS")]
+        ssb_rows = [{"OWNER": "SSB", "TABLE_NAME": table_name} for table_name in ("LINEORDER", "CUSTOMER", "SUPPLIER", "PART", "DWDATE")]
+
+        sh_recommendation = recommend_sample_dataset([*ssb_rows, *sh_rows])
+        ssb_recommendation = recommend_sample_dataset(ssb_rows)
+        none_recommendation = recommend_sample_dataset([])
+
+        self.assertEqual("SH", sh_recommendation.selected)
+        self.assertEqual("SSB", ssb_recommendation.selected)
+        self.assertEqual("none", none_recommendation.selected)
+        self.assertIn("SH", SAMPLE_SCHEMA_PROFILE_QUERY)
+        self.assertIn("SSB", SAMPLE_SCHEMA_PROFILE_QUERY)
 
 
 class OracleAdwReadOnlyPolicyTests(unittest.TestCase):

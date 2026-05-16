@@ -110,7 +110,11 @@ Acceptance criteria:
 - `[x]` Load Oracle ADW config from environment variables.
 - `[x]` Verify SQLcl exists without printing secrets.
 - `[x]` Verify wallet paths without printing wallet contents.
+- `[x]` Add dry-run admin provisioning plan for the working user.
+- `[x]` Choose first sample dataset: SH first, SSB later.
 - `[ ]` Implement working-user read-only query execution.
+- `[ ]` Implement explicit admin provisioning apply with idempotency and
+  redacted audit.
 - `[x]` Add database least-privilege expectations for the working user.
 - `[x]` Add query policy that blocks writes, DDL, `SELECT ... FOR UPDATE`,
   procedural blocks, database links, resource-heavy hints, and unsafe
