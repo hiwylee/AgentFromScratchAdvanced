@@ -36,7 +36,13 @@ def redact(value: Any) -> Any:
 
 def _is_sensitive_key(key: str) -> bool:
     upper = key.upper()
-    return any(part in upper for part in SENSITIVE_KEY_PARTS)
+    return any(
+        upper == part
+        or upper.startswith(f"{part}_")
+        or upper.endswith(f"_{part}")
+        or f"_{part}_" in upper
+        for part in SENSITIVE_KEY_PARTS
+    )
 
 
 def _redact_known_secret_values(text: str) -> str:

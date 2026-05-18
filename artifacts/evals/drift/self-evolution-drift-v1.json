@@ -1,0 +1,66 @@
+{
+  "schema_version": "agent-runtime.drift-fixture.v1",
+  "fixture_id": "self-evolution-drift-v1",
+  "description": "Repeated prompt checks for behavior drift before accepting self-evolution candidates.",
+  "cases": [
+    {
+      "case_id": "stable_sh_product_month_plan",
+      "input": "Show monthly revenue by product from the Oracle ADW SH schema.",
+      "repeats": 2,
+      "expected_signature_subset": {
+        "intent": {
+          "intent_type": "database_analysis",
+          "safety_level": "read_only",
+          "next_action": "inspect_schema_then_clarify"
+        },
+        "action": {
+          "kind": "ask_clarification"
+        },
+        "query_plan": {
+          "status": "planned",
+          "selected_table_ids": [
+            "SH.SALES",
+            "SH.PRODUCTS",
+            "SH.CHANNELS",
+            "SH.PROMOTIONS",
+            "SH.CUSTOMERS",
+            "SH.TIMES"
+          ],
+          "policy_code": "allowed",
+          "execution_status": "not_executed"
+        },
+        "result_explanation": {
+          "status": "succeeded",
+          "source": "fake/deterministic",
+          "real_database_execution": false,
+          "sql_execution_backend": "fake",
+          "columns": [
+            "month",
+            "product_category",
+            "revenue"
+          ],
+          "fixture_id": "schema-context-product-month-fake-results"
+        }
+      }
+    },
+    {
+      "case_id": "stable_workflow_selection",
+      "input": "이번달 특허자산 대체 등록 진행해줘",
+      "repeats": 2,
+      "expected_signature_subset": {
+        "intent": {
+          "intent_type": "workflow_execution",
+          "task_type": "patent_asset_replacement_registration",
+          "safety_level": "requires_checkpoint",
+          "next_action": "select_workflow_template"
+        },
+        "action": {
+          "kind": "select_workflow"
+        },
+        "final_answer": {
+          "next_action": "Select a workflow template and prepare a reviewable execution plan."
+        }
+      }
+    }
+  ]
+}

@@ -75,14 +75,11 @@ def run_golden_evals(
     *,
     output_dir: Path | None = None,
 ) -> EvalRunResult:
-    artifact_versions = ArtifactVersions(
-        eval_versions={
-            "golden_fixture": {
-                "path": str(fixture_dir),
-                "version": "1",
-            },
-        }
-    )
+    artifact_versions = ArtifactVersions.from_manifest()
+    artifact_versions.eval_versions["golden_fixture"] = {
+        "path": str(fixture_dir),
+        "version": "1",
+    }
     run_output_dir = output_dir or DEFAULT_EVAL_OUTPUT_DIR
     run_output_dir.mkdir(parents=True, exist_ok=True)
     cases = load_eval_cases(fixture_dir)

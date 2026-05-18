@@ -15,6 +15,8 @@ from .types import utc_now
 
 TRACE_SCHEMA_VERSION = "agent-runtime.trace.v1"
 TRACE_EVENT_SCHEMA_VERSION = "agent-runtime.trace-event.v1"
+ARTIFACT_MANIFEST_SCHEMA_VERSION = "agent-runtime.artifact-manifest.v1"
+DEFAULT_ARTIFACT_MANIFEST_PATH = Path("artifacts/artifact-manifest.v1.json")
 
 
 class SecretLeakError(AssertionError):
@@ -37,11 +39,25 @@ class ArtifactVersions:
     })
     memory_versions: dict[str, dict[str, str]] = field(default_factory=lambda: {
         "runtime_memory": {
-            "path": "none",
-            "version": "none",
+            "path": "artifacts/memory/runtime-memory.v1.json",
+            "version": "1",
         },
     })
     eval_versions: dict[str, dict[str, str]] = field(default_factory=dict)
+
+    @classmethod
+    def from_manifest(cls, path: Path = DEFAULT_ARTIFACT_MANIFEST_PATH) -> "ArtifactVersions":
+        if not path.exists():
+            return cls()
+        data = json.loads(path.read_text(encoding="utf-8"))
+        if data.get("schema_version") != ARTIFACT_MANIFEST_SCHEMA_VERSION:
+            raise ValueError(f"{path} uses unsupported artifact manifest schema: {data.get('schema_version')}")
+        return cls(
+            prompt_versions=_version_section(data, "prompt_versions", path),
+            policy_versions=_version_section(data, "policy_versions", path),
+            memory_versions=_version_section(data, "memory_versions", path),
+            eval_versions=_version_section(data, "eval_versions", path, required=False),
+        )
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -66,7 +82,7 @@ class TraceRecord:
         *,
         artifact_versions: ArtifactVersions | None = None,
     ) -> "TraceRecord":
-        versions = artifact_versions or ArtifactVersions()
+        versions = artifact_versions or ArtifactVersions.from_manifest()
         return cls(
             run_id=result.run_id,
             created_at=utc_now(),
@@ -131,6 +147,34 @@ def _event_category(event_type: str) -> str:
     if event_type.startswith("tool_"):
         return "tool"
     return "agent"
+
+
+def _version_section(
+    data: dict[str, Any],
+    key: str,
+    path: Path,
+    *,
+    required: bool = True,
+) -> dict[str, dict[str, str]]:
+    value = data.get(key)
+    if value is None and not required:
+        return {}
+    if not isinstance(value, dict):
+        raise ValueError(f"{path} requires object field {key!r}")
+    section: dict[str, dict[str, str]] = {}
+    for name, record in value.items():
+        if not isinstance(name, str) or not name:
+            raise ValueError(f"{path} {key} contains an invalid artifact name")
+        if not isinstance(record, dict):
+            raise ValueError(f"{path} {key}.{name} must be an object")
+        artifact_path = record.get("path")
+        version = record.get("version")
+        if not isinstance(artifact_path, str) or not artifact_path:
+            raise ValueError(f"{path} {key}.{name}.path must be a non-empty string")
+        if not isinstance(version, str) or not version:
+            raise ValueError(f"{path} {key}.{name}.version must be a non-empty string")
+        section[name] = {"path": artifact_path, "version": version}
+    return section
 
 
 def write_trace(record: TraceRecord, trace_dir: Path) -> Path:

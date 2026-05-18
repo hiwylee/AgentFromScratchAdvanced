@@ -1,0 +1,32 @@
+{
+  "schema_version": "agent-runtime.artifact-manifest.v1",
+  "manifest_id": "agent-runtime.local-artifacts.v1",
+  "prompt_versions": {
+    "intent_classifier": {
+      "path": "artifacts/prompts/intent-classifier.md",
+      "version": "1"
+    }
+  },
+  "policy_versions": {
+    "redaction_policy": {
+      "path": "artifacts/policies/redaction-policy.json",
+      "version": "1"
+    }
+  },
+  "memory_versions": {
+    "runtime_memory": {
+      "path": "artifacts/memory/runtime-memory.v1.json",
+      "version": "1"
+    }
+  },
+  "eval_versions": {
+    "golden_fixture": {
+      "path": "artifacts/evals/golden",
+      "version": "1"
+    },
+    "drift_fixture": {
+      "path": "artifacts/evals/drift/self-evolution-drift-v1.json",
+      "version": "1"
+    }
+  }
+}

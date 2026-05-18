@@ -39,7 +39,11 @@ class EvalRunnerTests(unittest.TestCase):
                 self.assertEqual(TRACE_SCHEMA_VERSION, trace["schema_version"])
                 self.assertEqual("1", trace["artifact_versions"]["prompt_versions"]["intent_classifier"]["version"])
                 self.assertEqual("1", trace["artifact_versions"]["policy_versions"]["redaction_policy"]["version"])
-                self.assertEqual("none", trace["artifact_versions"]["memory_versions"]["runtime_memory"]["version"])
+                self.assertEqual("1", trace["artifact_versions"]["memory_versions"]["runtime_memory"]["version"])
+                self.assertEqual(
+                    "artifacts/memory/runtime-memory.v1.json",
+                    trace["artifact_versions"]["memory_versions"]["runtime_memory"]["path"],
+                )
                 self.assertGreaterEqual(len(trace["events"]), 1)
                 self.assertEqual(TRACE_EVENT_SCHEMA_VERSION, trace["events"][0]["schema_version"])
                 self.assertIn("event_type", trace["events"][0])

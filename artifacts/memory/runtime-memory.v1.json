@@ -1,0 +1,26 @@
+{
+  "schema_version": "agent-runtime.memory-record.v1",
+  "memory_id": "runtime-memory-empty-v1",
+  "key": "runtime_memory_policy",
+  "value": "No user-derived runtime memory is active. Future memory must be proposed, reviewed, provenance-backed, and eval-gated before use.",
+  "status": "active",
+  "provenance": {
+    "source_type": "project_decision",
+    "source_id": "docs/tracking/decisions.md",
+    "author": "project_harness",
+    "recorded_at": "2026-05-18T00:00:00+00:00",
+    "confidence": 1.0,
+    "evidence": [
+      "docs/design-docs/self-evolution.md",
+      "docs/tracking/decisions.md"
+    ],
+    "scope": "project",
+    "expires_at": null,
+    "review_status": "approved"
+  },
+  "tags": [
+    "self-evolution",
+    "memory-provenance",
+    "closed-by-default"
+  ]
+}
