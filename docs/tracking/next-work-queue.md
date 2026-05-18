@@ -338,9 +338,9 @@ supported SH query-plan patterns:
    may propose SQL or attach fake rows, and record fixture id, scenario id, and
    adapter version in fake-explanation provenance.
 
-## Next Implementation Wave
+## Completed Milestone 7 Self-Evolution Control Boundary
 
-Start Milestone 7 self-evolution controls without enabling automatic
+Started Milestone 7 self-evolution controls without enabling automatic
 self-modification:
 
 1. Define `agent-runtime.improvement-candidate.v1` records for observed misses,
@@ -354,6 +354,38 @@ self-modification:
    prompts.
 5. Require frozen eval pass and explicit review status before accepting any
    self-evolution candidate.
+
+Items 1-5 are complete for the first control boundary. The runtime now has
+validators and tests for candidate records, reviewed memory provenance,
+rollback plans, drift fixtures, and acceptance gates. The gate does not apply
+changes; it only reports `passed` or `blocked`.
+
+Expert review hardening is reflected: accepted candidates require approved
+candidate provenance, reviewer identity and timestamp, frozen evals from
+`artifacts/evals/golden` with manifest versions matching candidate current
+versions, rollback type/version alignment, drift fixture path provenance, and
+semantic drift signatures that include query-plan and result-explanation
+details.
+
+Follow-up review hardening is also reflected: the gate rejects synthetic eval
+or drift result objects unless they cover every configured frozen case, include
+the manifest `golden_fixture` version, and include the configured drift fixture
+id, path, SHA-256 hash, and case ids.
+
+## Next Implementation Wave
+
+Choose the next Milestone 7 hardening slice:
+
+1. Add an operator-only candidate recording command that appends reviewed
+   improvement candidates to an audit or artifact path without applying them.
+2. Add JSON Schema files for self-evolution artifacts if external tools will
+   produce candidates, memory records, rollback plans, or drift fixtures.
+3. Add candidate hash/signature fields before any persisted candidate can
+   become an input to an apply workflow.
+4. Add rollback execution design only after artifact hashes and reviewer
+   identity are defined.
+5. Keep automatic self-modification, prompt rewrites, policy rewrites, memory
+   activation, and eval fixture rewrites closed.
 
 ## Verification Commands
 

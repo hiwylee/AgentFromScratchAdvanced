@@ -277,6 +277,27 @@ live execution is generally available. Fixture-scoped explanations exercise the
 trace, audit, and eval contracts without presenting demo rows as real database
 facts or opening a live execution path.
 
+## 2026-05-18: Self-Evolution Starts As A Gate, Not An Apply Path
+
+Decision: Milestone 7 records and validates self-evolution candidates, memory
+provenance, rollback plans, drift fixtures, and gate reports, but does not
+apply prompt, policy, memory, eval, schema, or code changes automatically.
+
+Rationale: Behavior-shaping changes can silently degrade safety and accuracy.
+The first useful boundary is a reviewable acceptance gate requiring approved
+review, passing frozen evals, passing drift checks, rollback coverage for every
+affected artifact, and one behavior-shaping artifact type per candidate.
+
+## 2026-05-18: Artifact Versions Come From A Manifest
+
+Decision: Trace artifact versions should load from
+`artifacts/artifact-manifest.v1.json`, including the closed-by-default runtime
+memory artifact.
+
+Rationale: Rollback and drift review need a single version source for prompt,
+policy, memory, and eval artifacts. Hard-coded trace versions are easy to
+forget when behavior-shaping artifacts change.
+
 ## 2026-05-17: General Live ADW Queries Stay Operator-Only
 
 Decision: General working-user live read-only queries are exposed only through

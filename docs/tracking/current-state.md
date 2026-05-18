@@ -248,22 +248,45 @@ Oracle ADW natural-language data access as the first domain specialization.
   require revenue and month terms before proposing SQL, bare channel/product
   prompts have negative coverage, and fake result-explanation provenance
   includes fixture id, scenario id, and adapter version.
+- Added the Milestone 7 self-evolution control boundary:
+  `agent_runtime.self_evolution` now validates improvement candidate records,
+  reviewed memory provenance, rollback plans, drift fixtures, and acceptance
+  gate reports. The gate can pass only when review is approved, frozen evals
+  pass, drift checks pass, rollback covers every affected artifact path, and
+  behavior-shaping candidates touch one artifact type at a time. No code path
+  applies prompt, policy, memory, eval, schema, or code changes automatically.
+- Added an artifact manifest and reviewed closed-by-default runtime memory
+  artifact. Trace artifact versions now load from
+  `artifacts/artifact-manifest.v1.json`, so prompt, policy, memory, and eval
+  version rollback has a single data source.
+- Added repeated-prompt drift fixtures for SH monthly product revenue planning
+  and patent workflow selection. Drift checks compare stable semantic
+  signatures and ignore volatile run ids.
+- Reflected expert review feedback on the Milestone 7 gate: approved
+  candidates now require approved provenance, reviewer identity/timestamp,
+  frozen evals from `artifacts/evals/golden` with manifest versions matching
+  candidate current versions, rollback artifact type and before/after version
+  alignment, drift fixture path provenance, and finer query-plan/result
+  explanation signatures.
+- Reflected follow-up review feedback by making gate inputs prove fixture
+  provenance. Frozen eval results must include the manifest `golden_fixture`
+  version and every frozen case id. Drift results must include the configured
+  drift fixture id, path, SHA-256 hash, and every drift case id before the gate
+  can pass.
 
 ## Next Action
 
-Next implementation focus is Milestone 7 self-evolution controls. Start with
-data artifacts and gates, not automatic self-modification:
+Next implementation focus moves past the first Milestone 7 control boundary:
 
-- define `agent-runtime.improvement-candidate.v1` records for observed misses,
-  operator notes, eval failures, and review feedback;
-- add memory provenance fields before any remembered instruction or
-  behavior-shaping fact can influence runtime behavior;
-- define prompt, policy, memory, and eval artifact rollback before accepting
-  behavior-shaping changes;
-- add drift-detection fixtures for repeated database-analysis and workflow
-  prompts;
-- require frozen eval pass and explicit review status before any improvement
-  candidate can be accepted.
+- decide whether to add an operator-only command for recording improvement
+  candidates, or keep candidate creation fixture/manual-only for another wave;
+- add JSON Schema files for the self-evolution artifacts if external producers
+  will write them directly;
+- broaden drift fixtures only after a concrete prompt, policy, or memory change
+  candidate needs coverage;
+- keep automatic self-modification closed until candidate persistence,
+  reviewer identity, artifact signing or hashes, and rollback execution are
+  designed.
 
 Persistent workflow approval/resume and real target-system writes must remain
 closed until signed or hashed checkpoint persistence, approval authorization,

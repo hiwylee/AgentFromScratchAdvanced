@@ -297,3 +297,25 @@ direction and implementation changes, not every tiny edit.
 - Recorded the next implementation wave as Milestone 7 self-evolution
   controls: improvement-candidate records, memory provenance, rollback,
   drift-detection fixtures, and eval/review gates.
+- Added the Milestone 7 self-evolution control boundary. New data models and
+  tests cover improvement candidates, memory provenance, rollback plans,
+  acceptance-gate reports, artifact manifest loading, and repeated-prompt drift
+  fixtures without applying prompt, policy, memory, eval, or code changes.
+- Added `artifacts/artifact-manifest.v1.json`,
+  `artifacts/memory/runtime-memory.v1.json`, and
+  `artifacts/evals/drift/self-evolution-drift-v1.json`. Trace artifact versions
+  now load from the manifest, and runtime memory is explicitly versioned as a
+  reviewed closed-by-default policy.
+- Tightened redaction so status fields such as `passed` are not mistaken for
+  password fields while `DB_USER_PASS`, wallet password, token, API key, and
+  private-key shaped fields remain redacted.
+- Reflected expert review feedback on the self-evolution gate. Acceptance now
+  also requires approved candidate provenance, reviewer identity and timestamp
+  for approved reviews, frozen evals from `artifacts/evals/golden` with
+  manifest artifact versions matching candidate current versions, rollback
+  artifact type and version alignment, and finer drift signatures that include
+  query-plan details and result-explanation hashes.
+- Reflected follow-up review feedback by rejecting synthetic eval and drift
+  results at the self-evolution gate. Eval results must include the manifest
+  `golden_fixture` version and every frozen case id; drift results must include
+  the configured drift fixture id, path, SHA-256 hash, and every drift case id.

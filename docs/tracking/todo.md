@@ -197,11 +197,11 @@ Acceptance criteria:
 
 ## Milestone 7: Self-Evolution Controls
 
-- `[ ]` Add improvement candidate records.
-- `[ ]` Add memory provenance fields.
-- `[ ]` Add prompt, policy, and memory rollback path.
-- `[ ]` Add drift detection fixtures for repeated questions.
-- `[ ]` Require frozen eval pass before accepting behavior-shaping changes.
+- `[x]` Add improvement candidate records.
+- `[x]` Add memory provenance fields.
+- `[x]` Add prompt, policy, and memory rollback path.
+- `[x]` Add drift detection fixtures for repeated questions.
+- `[x]` Require frozen eval pass before accepting behavior-shaping changes.
 
 ## Ongoing Harness Work
 
