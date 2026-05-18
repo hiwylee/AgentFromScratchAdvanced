@@ -67,6 +67,536 @@
       }
     },
     {
+      "case_id": "sh_revenue_product_month_schema_context",
+      "input": "Show monthly revenue by product from the Oracle ADW SH schema.",
+      "expected": {
+        "intent": {
+          "intent_type": "database_analysis",
+          "task_type": "metadata_exploration",
+          "safety_level": "read_only",
+          "requires_oracle_adw_context": true,
+          "entities": {
+            "metrics": [
+              "revenue"
+            ],
+            "dimensions": [
+              "product"
+            ],
+            "time_ranges": [
+              "monthly"
+            ]
+          },
+          "required_context": [
+            "business_glossary",
+            "oracle_adw_schema"
+          ],
+          "ambiguities": [
+            "dimension_table_mapping",
+            "metric_definition"
+          ],
+          "next_action": "inspect_schema_then_clarify"
+        },
+        "action": {
+          "kind": "ask_clarification",
+          "payload": {
+            "required_context": [
+              "business_glossary",
+              "oracle_adw_schema"
+            ]
+          }
+        },
+        "final_answer": {
+          "content": "I need schema or business glossary context before building a query plan.",
+          "assumptions": [
+            "No SQL should be generated before intent and schema context are resolved."
+          ],
+          "next_action": "Inspect Oracle ADW schema context, then ask a clarification question if ambiguity remains."
+        },
+        "trace_events": [
+          {
+            "event_type": "tool_started",
+            "payload": {
+              "call": {
+                "name": "mock_schema_context",
+                "arguments": {
+                  "required_context": [
+                    "business_glossary",
+                    "oracle_adw_schema"
+                  ]
+                }
+              },
+              "tool": {
+                "read_only": true
+              }
+            }
+          },
+          {
+            "event_type": "tool_completed",
+            "payload": {
+              "result": {
+                "tool_name": "mock_schema_context",
+                "state": "completed",
+                "output": {
+                  "mode": "compact_schema_context_read_only",
+                  "external_access": false,
+                  "sql_execution_enabled": false,
+                  "profile_id": "oracle_adw_sh.v1",
+                  "query_plan": {
+                    "schema_version": "agent-runtime.query-plan.v1",
+                    "status": "planned",
+                    "$absent": [
+                      "result_rows"
+                    ],
+                    "selected_table_ids": [
+                      "SH.SALES",
+                      "SH.PRODUCTS",
+                      "SH.TIMES"
+                    ],
+                    "policy_validation": {
+                      "allowed": true,
+                      "code": "allowed"
+                    },
+                    "execution": {
+                      "enabled": false,
+                      "status": "not_executed",
+                      "$absent": [
+                        "rows",
+                        "result_rows"
+                      ]
+                    }
+                  },
+                  "result_explanation": {
+                    "schema_version": "agent-runtime.result-explanation.v1",
+                    "status": "succeeded",
+                    "source": "fake/deterministic",
+                    "real_database_execution": false,
+                    "sql_execution_backend": "fake",
+                    "row_count": 2,
+                    "columns": [
+                      "month",
+                      "product_category",
+                      "revenue"
+                    ],
+                    "adapter_response_metadata": {
+                      "backend": "fake",
+                      "adapter": "FakeSqlExecutionAdapter",
+                      "fixture_id": "schema-context-product-month-fake-results",
+                      "scenario_id": "sh-revenue-product-month-demo",
+                      "adapter_version": "fake-sql-execution-adapter.v1",
+                      "oracle_adw_execution": false,
+                      "sqlcl_execution": false
+                    },
+                    "query_plan": {
+                      "schema_version": "agent-runtime.query-plan.v1",
+                      "status": "planned",
+                      "execution": {
+                        "enabled": false,
+                        "status": "not_executed"
+                      }
+                    },
+                    "execution_response": {
+                      "backend": "fake",
+                      "status": "succeeded",
+                      "row_count": 2
+                    },
+                    "$absent": [
+                      "real_database_rows",
+                      "oracle_adw_rows",
+                      "sqlcl_rows"
+                    ]
+                  }
+                }
+              }
+            }
+          },
+          {
+            "event_type": "observation_recorded",
+            "payload": {
+              "observation": {
+                "source": "tool:mock_schema_context",
+                "content": {
+                  "tool_result": {
+                    "state": "completed",
+                    "output": {
+                      "sql_execution_enabled": false
+                    }
+                  }
+                }
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "case_id": "sh_revenue_region_month_ambiguous_schema_context",
+      "input": "Show monthly revenue by region from the Oracle ADW SH schema.",
+      "expected": {
+        "intent": {
+          "intent_type": "database_analysis",
+          "safety_level": "read_only",
+          "requires_oracle_adw_context": true,
+          "entities": {
+            "metrics": [
+              "revenue"
+            ],
+            "dimensions": [
+              "region"
+            ],
+            "time_ranges": [
+              "monthly"
+            ]
+          },
+          "next_action": "inspect_schema_then_clarify"
+        },
+        "action": {
+          "kind": "ask_clarification"
+        },
+        "final_answer": {
+          "content": "I need schema or business glossary context before building a query plan.",
+          "next_action": "Inspect Oracle ADW schema context, then ask a clarification question if ambiguity remains."
+        },
+        "trace_events": [
+          {
+            "event_type": "tool_completed",
+            "payload": {
+              "result": {
+                "tool_name": "mock_schema_context",
+                "state": "completed",
+                "output": {
+                  "profile_id": "oracle_adw_sh.v1",
+                  "external_access": false,
+                  "sql_generation_enabled": false,
+                  "sql_execution_enabled": false,
+                  "clarification": {
+                    "required": true,
+                    "reason": "ambiguous_schema_match",
+                    "candidate_table_ids": [
+                      "SH.SALES",
+                      "SH.COUNTRIES"
+                    ]
+                  },
+                  "query_plan": {
+                    "status": "clarification_required",
+                    "proposed_sql": null,
+                    "policy_validation": {
+                      "allowed": false,
+                      "code": "not_evaluated",
+                      "reason": "clarification_required"
+                    },
+                    "execution": {
+                      "enabled": false,
+                      "status": "not_executed",
+                      "$absent": [
+                        "rows",
+                        "result_rows",
+                        "real_database_rows",
+                        "oracle_adw_rows",
+                        "sqlcl_rows"
+                      ]
+                    },
+                    "refusal_reason": "ambiguous_schema_match",
+                    "$absent": [
+                      "rows",
+                      "result_rows",
+                      "real_database_rows",
+                      "oracle_adw_rows",
+                      "sqlcl_rows",
+                      "real_database_execution"
+                    ]
+                  },
+                  "$absent": [
+                    "result_explanation",
+                    "rows",
+                    "result_rows",
+                    "real_database_rows",
+                    "oracle_adw_rows",
+                    "sqlcl_rows",
+                    "real_database_execution",
+                    "sql_execution_backend"
+                  ]
+                }
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "case_id": "sh_revenue_channel_month_schema_context",
+      "input": "Show monthly revenue by channel from the Oracle ADW SH schema.",
+      "expected": {
+        "intent": {
+          "intent_type": "database_analysis",
+          "task_type": "metadata_exploration",
+          "safety_level": "read_only",
+          "requires_oracle_adw_context": true,
+          "entities": {
+            "metrics": [
+              "revenue"
+            ],
+            "dimensions": [
+              "channel"
+            ],
+            "time_ranges": [
+              "monthly"
+            ]
+          },
+          "required_context": [
+            "business_glossary",
+            "oracle_adw_schema"
+          ],
+          "ambiguities": [
+            "dimension_table_mapping",
+            "metric_definition"
+          ],
+          "next_action": "inspect_schema_then_clarify"
+        },
+        "action": {
+          "kind": "ask_clarification"
+        },
+        "trace_events": [
+          {
+            "event_type": "tool_completed",
+            "payload": {
+              "result": {
+                "tool_name": "mock_schema_context",
+                "state": "completed",
+                "output": {
+                  "mode": "compact_schema_context_read_only",
+                  "external_access": false,
+                  "sql_execution_enabled": false,
+                  "profile_id": "oracle_adw_sh.v1",
+                  "query_plan": {
+                    "schema_version": "agent-runtime.query-plan.v1",
+                    "status": "planned",
+                    "selected_table_ids": [
+                      "SH.SALES",
+                      "SH.CHANNELS",
+                      "SH.TIMES"
+                    ],
+                    "policy_validation": {
+                      "allowed": true,
+                      "code": "allowed"
+                    },
+                    "execution": {
+                      "enabled": false,
+                      "status": "not_executed",
+                      "$absent": [
+                        "rows",
+                        "result_rows"
+                      ]
+                    }
+                  },
+                  "result_explanation": {
+                    "schema_version": "agent-runtime.result-explanation.v1",
+                    "status": "succeeded",
+                    "source": "fake/deterministic",
+                    "real_database_execution": false,
+                    "sql_execution_backend": "fake",
+                    "row_count": 2,
+                    "columns": [
+                      "month",
+                      "channel",
+                      "revenue"
+                    ],
+                    "adapter_response_metadata": {
+                      "backend": "fake",
+                      "adapter": "FakeSqlExecutionAdapter",
+                      "fixture_id": "schema-context-channel-month-fake-results",
+                      "scenario_id": "sh-revenue-channel-month-demo",
+                      "adapter_version": "fake-sql-execution-adapter.v1",
+                      "oracle_adw_execution": false,
+                      "sqlcl_execution": false
+                    },
+                    "execution_response": {
+                      "backend": "fake",
+                      "status": "succeeded",
+                      "row_count": 2
+                    },
+                    "$absent": [
+                      "real_database_rows",
+                      "oracle_adw_rows",
+                      "sqlcl_rows"
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "case_id": "sh_revenue_promotion_month_schema_context",
+      "input": "Show monthly revenue by promotion from the Oracle ADW SH schema.",
+      "expected": {
+        "intent": {
+          "intent_type": "database_analysis",
+          "task_type": "metadata_exploration",
+          "safety_level": "read_only",
+          "requires_oracle_adw_context": true,
+          "entities": {
+            "metrics": [
+              "revenue"
+            ],
+            "dimensions": [
+              "promotion"
+            ],
+            "time_ranges": [
+              "monthly"
+            ]
+          },
+          "required_context": [
+            "business_glossary",
+            "oracle_adw_schema"
+          ],
+          "ambiguities": [
+            "dimension_table_mapping",
+            "metric_definition"
+          ],
+          "next_action": "inspect_schema_then_clarify"
+        },
+        "action": {
+          "kind": "ask_clarification"
+        },
+        "trace_events": [
+          {
+            "event_type": "tool_completed",
+            "payload": {
+              "result": {
+                "tool_name": "mock_schema_context",
+                "state": "completed",
+                "output": {
+                  "mode": "compact_schema_context_read_only",
+                  "external_access": false,
+                  "sql_execution_enabled": false,
+                  "profile_id": "oracle_adw_sh.v1",
+                  "query_plan": {
+                    "schema_version": "agent-runtime.query-plan.v1",
+                    "status": "planned",
+                    "selected_table_ids": [
+                      "SH.SALES",
+                      "SH.PROMOTIONS",
+                      "SH.TIMES"
+                    ],
+                    "policy_validation": {
+                      "allowed": true,
+                      "code": "allowed"
+                    },
+                    "execution": {
+                      "enabled": false,
+                      "status": "not_executed",
+                      "$absent": [
+                        "rows",
+                        "result_rows"
+                      ]
+                    }
+                  },
+                  "result_explanation": {
+                    "schema_version": "agent-runtime.result-explanation.v1",
+                    "status": "succeeded",
+                    "source": "fake/deterministic",
+                    "real_database_execution": false,
+                    "sql_execution_backend": "fake",
+                    "row_count": 2,
+                    "columns": [
+                      "month",
+                      "promotion_category",
+                      "revenue"
+                    ],
+                    "adapter_response_metadata": {
+                      "backend": "fake",
+                      "adapter": "FakeSqlExecutionAdapter",
+                      "fixture_id": "schema-context-promotion-category-month-fake-results",
+                      "scenario_id": "sh-revenue-promotion-category-month-demo",
+                      "adapter_version": "fake-sql-execution-adapter.v1",
+                      "oracle_adw_execution": false,
+                      "sqlcl_execution": false
+                    },
+                    "execution_response": {
+                      "backend": "fake",
+                      "status": "succeeded",
+                      "row_count": 2
+                    },
+                    "$absent": [
+                      "real_database_rows",
+                      "oracle_adw_rows",
+                      "sqlcl_rows"
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "case_id": "sh_revenue_month_unsupported_schema_context",
+      "input": "Show monthly revenue from the Oracle ADW SH schema.",
+      "expected": {
+        "intent": {
+          "intent_type": "database_analysis",
+          "task_type": "metadata_exploration",
+          "safety_level": "read_only",
+          "requires_oracle_adw_context": true,
+          "entities": {
+            "metrics": [
+              "revenue"
+            ],
+            "dimensions": [],
+            "time_ranges": [
+              "monthly"
+            ]
+          },
+          "required_context": [
+            "business_glossary",
+            "oracle_adw_schema"
+          ],
+          "ambiguities": [
+            "metric_definition"
+          ],
+          "next_action": "inspect_schema_then_clarify"
+        },
+        "action": {
+          "kind": "ask_clarification"
+        },
+        "final_answer": {
+          "content": "I need schema or business glossary context before building a query plan.",
+          "next_action": "Inspect Oracle ADW schema context, then ask a clarification question if ambiguity remains."
+        },
+        "trace_events": [
+          {
+            "event_type": "tool_completed",
+            "payload": {
+              "result": {
+                "tool_name": "mock_schema_context",
+                "state": "completed",
+                "output": {
+                  "profile_id": "oracle_adw_sh.v1",
+                  "external_access": false,
+                  "sql_generation_enabled": false,
+                  "sql_execution_enabled": false,
+                  "$absent": [
+                    "query_plan",
+                    "result_explanation",
+                    "rows",
+                    "result_rows",
+                    "real_database_rows",
+                    "oracle_adw_rows",
+                    "sqlcl_rows",
+                    "real_database_execution",
+                    "sql_execution_backend"
+                  ]
+                }
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
       "case_id": "blocked_database_write",
       "input": "고객 테이블에서 오래된 데이터를 삭제해줘",
       "expected": {

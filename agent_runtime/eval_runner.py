@@ -161,6 +161,7 @@ def _run_case(
     secret_leak_detected = False
     try:
         trace_path = str(write_trace(trace, case_dir / "traces"))
+        trace_data = trace.to_dict()
         actual = {
             "input": case.input_text,
             "intent": result.intent,
@@ -180,9 +181,12 @@ def _run_case(
             "final_answer": result.final_answer,
             "trace_path": trace_path,
         })
+        trace_data = trace.to_dict()
         mismatches.append("trace or eval output contains an unredacted known secret value")
 
-    mismatches.extend(_compare_expected(actual, redact(case.expected)))
+    comparison_actual = dict(actual)
+    comparison_actual["trace_events"] = trace_data.get("events", [])
+    mismatches.extend(_compare_expected(comparison_actual, redact(case.expected)))
     return EvalCaseResult(
         fixture_id=case.fixture_id,
         case_id=case.case_id,
@@ -195,19 +199,89 @@ def _run_case(
 
 
 def _compare_expected(actual: Any, expected: Any, path: str = "actual") -> list[str]:
+    if path == "actual.trace_events":
+        return _compare_trace_event_subsets(actual, expected, path)
     if isinstance(expected, dict):
         if not isinstance(actual, dict):
             return [f"{path}: expected object, got {type(actual).__name__}"]
         mismatches: list[str] = []
         for key, expected_value in expected.items():
+            if key == "$absent":
+                mismatches.extend(_compare_absent_keys(actual, expected_value, path))
+                continue
             if key not in actual:
                 mismatches.append(f"{path}.{key}: missing")
                 continue
             mismatches.extend(_compare_expected(actual[key], expected_value, f"{path}.{key}"))
         return mismatches
+    if isinstance(expected, list):
+        return _compare_list_subset(actual, expected, path)
     if actual != expected:
         return [f"{path}: expected {expected!r}, got {actual!r}"]
     return []
+
+
+def _compare_absent_keys(actual: dict[str, Any], expected: Any, path: str) -> list[str]:
+    if not isinstance(expected, list) or not all(isinstance(key, str) for key in expected):
+        return [f"{path}.$absent: expected array of key names"]
+    return [
+        f"{path}.{key}: expected absent"
+        for key in expected
+        if key in actual
+    ]
+
+
+def _compare_list_subset(actual: Any, expected: list[Any], path: str) -> list[str]:
+    if not isinstance(actual, list):
+        return [f"{path}: expected array, got {type(actual).__name__}"]
+
+    mismatches: list[str] = []
+    search_start = 0
+    for expected_index, expected_item in enumerate(expected):
+        matched_at = None
+        for actual_index in range(search_start, len(actual)):
+            candidate_mismatches = _compare_expected(
+                actual[actual_index],
+                expected_item,
+                f"{path}[{expected_index}]",
+            )
+            if not candidate_mismatches:
+                matched_at = actual_index
+                break
+        if matched_at is None:
+            mismatches.append(f"{path}[{expected_index}]: no matching list item for subset {expected_item!r}")
+            continue
+        search_start = matched_at + 1
+    return mismatches
+
+
+def _compare_trace_event_subsets(actual: Any, expected: Any, path: str) -> list[str]:
+    if not isinstance(expected, list):
+        return [f"{path}: expected array, got {type(expected).__name__}"]
+    if not isinstance(actual, list):
+        return [f"{path}: expected array, got {type(actual).__name__}"]
+
+    mismatches: list[str] = []
+    search_start = 0
+    for expected_index, expected_event in enumerate(expected):
+        if not isinstance(expected_event, dict):
+            mismatches.append(f"{path}[{expected_index}]: expected object subset")
+            continue
+        matched_at = None
+        for actual_index in range(search_start, len(actual)):
+            candidate_mismatches = _compare_expected(
+                actual[actual_index],
+                expected_event,
+                f"{path}[{expected_index}]",
+            )
+            if not candidate_mismatches:
+                matched_at = actual_index
+                break
+        if matched_at is None:
+            mismatches.append(f"{path}[{expected_index}]: no matching trace event for subset {expected_event!r}")
+            continue
+        search_start = matched_at + 1
+    return mismatches
 
 
 def _required_str(data: dict[str, Any], key: str, path: Path) -> str:

@@ -39,6 +39,11 @@ DB_KEYWORDS = (
     "매출",
     "고객",
     "상품",
+    "채널",
+    "프로모션",
+    "channel",
+    "promotion",
+    "promo",
 )
 
 WORKFLOW_KEYWORDS = (
@@ -74,6 +79,8 @@ METRIC_KEYWORDS = {
 DIMENSION_KEYWORDS = {
     "customer": ("고객", "customer", "client"),
     "product": ("상품", "제품", "product", "item"),
+    "channel": ("채널", "channel"),
+    "promotion": ("프로모션", "promotion", "promo", "campaign"),
     "region": ("지역", "region", "area"),
 }
 

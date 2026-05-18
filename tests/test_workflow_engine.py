@@ -9,6 +9,7 @@ from agent_runtime.workflow import (
     WorkflowEngine,
     load_workflow_template,
 )
+from agent_runtime.trace import TRACE_EVENT_SCHEMA_VERSION, load_monitor_events
 
 
 class WorkflowEngineTests(unittest.TestCase):
@@ -31,6 +32,11 @@ class WorkflowEngineTests(unittest.TestCase):
             self.assertTrue(Path(result["status_path"]).exists())
             self.assertTrue(Path(result["events_path"]).exists())
             self.assertTrue(Path(result["audit_path"]).exists())
+            checkpoint = result["human_gate"]["review_packet"]["trusted_checkpoint"]
+            self.assertEqual(result["run_id"], checkpoint["run_id"])
+            self.assertEqual(["PA-100", "PA-200"], checkpoint["record_ids"])
+            self.assertTrue(checkpoint["identity"].startswith("patent-asset-replacement-registration:1:"))
+            self.assertEqual(64, len(checkpoint["hash"]))
             self.assertEqual([], connector.loaded_batches)
 
     def test_resume_with_human_decision_loads_d_after_checkpoint(self):
@@ -45,12 +51,7 @@ class WorkflowEngineTests(unittest.TestCase):
 
             resumed = engine.resume_with_human_decision(
                 result["run_id"],
-                HumanDecision(
-                    actor="reviewer@example.com",
-                    action="approve_load",
-                    policy_basis="validated checkpoint packet",
-                    approved_record_ids=("PA-100", "PA-200"),
-                ),
+                self._approval(result, ("PA-100", "PA-200")),
             )
 
             self.assertEqual("completed", resumed["state"])
@@ -76,7 +77,7 @@ class WorkflowEngineTests(unittest.TestCase):
             self.assertEqual("blocked", resumed["state"])
             self.assertEqual("trusted_checkpoint_not_found", resumed["reason"])
 
-    def test_resume_rejects_records_outside_checkpoint(self):
+    def test_resume_requires_checkpoint_identity_and_hash(self):
         with tempfile.TemporaryDirectory() as tmp:
             connector = MockPatentAssetConnector()
             engine = WorkflowEngine(
@@ -91,9 +92,73 @@ class WorkflowEngineTests(unittest.TestCase):
                 HumanDecision(
                     actor="reviewer@example.com",
                     action="approve_load",
-                    policy_basis="invalid approval",
-                    approved_record_ids=("PA-999",),
+                    policy_basis="missing checkpoint identity",
+                    approved_record_ids=("PA-100",),
                 ),
+            )
+
+            self.assertEqual("blocked", resumed["state"])
+            self.assertEqual("trusted_checkpoint_identity_missing", resumed["reason"])
+            self.assertEqual([], connector.loaded_batches)
+
+    def test_resume_rejects_mismatched_checkpoint_hash(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            connector = MockPatentAssetConnector()
+            engine = WorkflowEngine(
+                connector=connector,
+                run_root=Path(tmp) / "runs",
+                audit_path=Path(tmp) / "audit.jsonl",
+            )
+            result = engine.run_patent_asset_replacement(period="current_month")
+            decision = self._approval(result, ("PA-100",))
+            decision = HumanDecision(
+                actor=decision.actor,
+                action=decision.action,
+                policy_basis=decision.policy_basis,
+                approved_record_ids=decision.approved_record_ids,
+                checkpoint_identity=decision.checkpoint_identity,
+                checkpoint_hash="0" * 64,
+            )
+
+            resumed = engine.resume_with_human_decision(result["run_id"], decision)
+
+            self.assertEqual("blocked", resumed["state"])
+            self.assertEqual("trusted_checkpoint_hash_mismatch", resumed["reason"])
+            self.assertEqual([], connector.loaded_batches)
+
+    def test_resume_rejects_tampered_checkpoint_store(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            connector = MockPatentAssetConnector()
+            engine = WorkflowEngine(
+                connector=connector,
+                run_root=Path(tmp) / "runs",
+                audit_path=Path(tmp) / "audit.jsonl",
+            )
+            result = engine.run_patent_asset_replacement(period="current_month")
+            engine._checkpoint_store[result["run_id"]]["records"][0]["owner"] = "tampered"
+
+            resumed = engine.resume_with_human_decision(
+                result["run_id"],
+                self._approval(result, ("PA-100",)),
+            )
+
+            self.assertEqual("blocked", resumed["state"])
+            self.assertEqual("trusted_checkpoint_hash_mismatch", resumed["reason"])
+            self.assertEqual([], connector.loaded_batches)
+
+    def test_resume_rejects_records_outside_checkpoint(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            connector = MockPatentAssetConnector()
+            engine = WorkflowEngine(
+                connector=connector,
+                run_root=Path(tmp) / "runs",
+                audit_path=Path(tmp) / "audit.jsonl",
+            )
+            result = engine.run_patent_asset_replacement(period="current_month")
+
+            resumed = engine.resume_with_human_decision(
+                result["run_id"],
+                self._approval(result, ("PA-999",), policy_basis="invalid approval"),
             )
 
             self.assertEqual("blocked", resumed["state"])
@@ -121,12 +186,7 @@ class WorkflowEngineTests(unittest.TestCase):
             )
             approved_after_reject = engine.resume_with_human_decision(
                 result["run_id"],
-                HumanDecision(
-                    actor="reviewer@example.com",
-                    action="approve_load",
-                    policy_basis="late approval attempt",
-                    approved_record_ids=("PA-100",),
-                ),
+                self._approval(result, ("PA-100",), policy_basis="late approval attempt"),
             )
 
             self.assertEqual("closed", rejected["state"])
@@ -146,21 +206,11 @@ class WorkflowEngineTests(unittest.TestCase):
 
             failed = engine.resume_with_human_decision(
                 result["run_id"],
-                HumanDecision(
-                    actor="reviewer@example.com",
-                    action="approve_load",
-                    policy_basis="first attempt",
-                    approved_record_ids=("PA-100",),
-                ),
+                self._approval(result, ("PA-100",), policy_basis="first attempt"),
             )
             retried = engine.resume_with_human_decision(
                 result["run_id"],
-                HumanDecision(
-                    actor="reviewer@example.com",
-                    action="approve_load",
-                    policy_basis="retry attempt",
-                    approved_record_ids=("PA-100",),
-                ),
+                self._approval(result, ("PA-100",), policy_basis="retry attempt"),
             )
 
             self.assertEqual("failed", failed["state"])
@@ -185,12 +235,7 @@ class WorkflowEngineTests(unittest.TestCase):
 
             resumed = engine.resume_with_human_decision(
                 result["run_id"],
-                HumanDecision(
-                    actor="reviewer@example.com",
-                    action="approve_load",
-                    policy_basis="attempted forged mutation",
-                    approved_record_ids=("PA-999",),
-                ),
+                self._approval(result, ("PA-999",), policy_basis="attempted forged mutation"),
             )
 
             self.assertEqual("blocked", resumed["state"])
@@ -503,12 +548,7 @@ class WorkflowEngineTests(unittest.TestCase):
 
             resumed = engine.resume_with_human_decision(
                 result["run_id"],
-                HumanDecision(
-                    actor="reviewer@example.com",
-                    action="approve_load",
-                    policy_basis="validated checkpoint packet",
-                    approved_record_ids=("PA-100", "PA-200"),
-                ),
+                self._approval(result, ("PA-100", "PA-200")),
             )
             completed_status = json.loads(Path(result["status_path"]).read_text(encoding="utf-8"))
             event_text = Path(result["events_path"]).read_text(encoding="utf-8")
@@ -520,8 +560,28 @@ class WorkflowEngineTests(unittest.TestCase):
             self.assertIn("human_decision_recorded", event_text)
             self.assertIn("run_finished", event_text)
 
+            trace_events = load_monitor_events(Path(result["events_path"]))
+            event_types = [event["event_type"] for event in trace_events]
+            self.assertIn("trusted_checkpoint_created", event_types)
+            self.assertIn("workflow_resume_requested", event_types)
+            self.assertIn("resume_validation_passed", event_types)
+            self.assertIn("target_load_attempted", event_types)
+            self.assertTrue(all(event["schema_version"] == TRACE_EVENT_SCHEMA_VERSION for event in trace_events))
+            self.assertTrue(all("payload" in event for event in trace_events))
+
     def _step(self, result, step_id):
         return next(step for step in result["steps"] if step["step_id"] == step_id)
+
+    def _approval(self, result, approved_record_ids, policy_basis="validated checkpoint packet"):
+        checkpoint = result["human_gate"]["review_packet"]["trusted_checkpoint"]
+        return HumanDecision(
+            actor="reviewer@example.com",
+            action="approve_load",
+            policy_basis=policy_basis,
+            approved_record_ids=approved_record_ids,
+            checkpoint_identity=checkpoint["identity"],
+            checkpoint_hash=checkpoint["hash"],
+        )
 
 
 class FailingConnector:

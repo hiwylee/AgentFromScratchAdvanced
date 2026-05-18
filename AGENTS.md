@@ -21,6 +21,7 @@ This repository is for building an agent runtime from scratch while using
 - `docs/tracking/`: current state, todo list, decisions, and change log.
 - `docs/reviews/`: cross-functional reviews and PM reflection notes.
 - `docs/references/`: distilled notes from `../codex` or external material.
+- `docs/runbooks/`: operator procedures for explicit manual actions.
 - `docs/generated/`: generated artifacts only; do not hand-edit unless noted.
 
 ## Working Rules

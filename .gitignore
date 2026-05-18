@@ -16,6 +16,10 @@ Wallet_*/
 # Local runtime output
 .agent/
 docs/generated/
+!docs/generated/
+docs/generated/*
+!docs/generated/schema-context/
+!docs/generated/schema-context/*.json
 
 # Python / uv local state
 .venv/

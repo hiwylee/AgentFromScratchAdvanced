@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import hashlib
 from copy import deepcopy
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import asdict, dataclass, field
@@ -18,6 +19,7 @@ from .types import utc_now
 
 Record = dict[str, Any]
 DEFAULT_TEMPLATE_PATH = Path("artifacts/workflows/patent-asset-replacement-registration.json")
+CHECKPOINT_SCHEMA_VERSION = "agent-runtime.workflow-checkpoint.v1"
 
 
 @dataclass(frozen=True)
@@ -73,6 +75,8 @@ class HumanDecision:
     action: str
     policy_basis: str
     approved_record_ids: tuple[str, ...]
+    checkpoint_identity: str = ""
+    checkpoint_hash: str = ""
     decided_at: str = field(default_factory=utc_now)
 
     def to_dict(self) -> dict[str, Any]:
@@ -240,11 +244,19 @@ class WorkflowEngine:
                 steps.append(_load_step("skipped", "no_records_to_load"))
                 state = "closed"
             else:
+                trusted_checkpoint = _trusted_checkpoint(
+                    run_id=run_id,
+                    template=self.template,
+                    period=period,
+                    records=list(reconciliation["records"].values()),
+                    reconciliation=reconciliation,
+                )
                 review_packet = _checkpoint_packet(
                     run_id=run_id,
                     template=self.template,
                     period=period,
                     reconciliation=reconciliation,
+                    trusted_checkpoint=trusted_checkpoint,
                 )
                 human_gate = {"required": True, "state": "checkpoint_required", "review_packet": review_packet}
                 steps.append(
@@ -256,6 +268,7 @@ class WorkflowEngine:
                         details={"review_packet": review_packet},
                     )
                 )
+                self._event(monitor, run_id, "trusted_checkpoint_created", {"checkpoint": trusted_checkpoint})
                 self._event(monitor, run_id, "target_load_checkpoint_requested", {"review_packet": review_packet})
                 target_load = _blocked_load("explicit_checkpoint_required")
                 steps.append(_load_step("skipped", "explicit_checkpoint_required"))
@@ -266,6 +279,7 @@ class WorkflowEngine:
                     "records": deepcopy(list(reconciliation["records"].values())),
                     "reconciliation": deepcopy(reconciliation),
                     "review_packet": deepcopy(review_packet),
+                    "checkpoint": deepcopy(trusted_checkpoint),
                 }
 
             result = _result(
@@ -322,17 +336,27 @@ class WorkflowEngine:
         run_id: str,
         decision: HumanDecision,
     ) -> dict[str, Any]:
+        monitor = _resume_monitor(run_id, self.run_root)
+        self._event(monitor, run_id, "workflow_resume_requested", {"decision": decision.to_dict()})
         checkpoint = self._checkpoint_store.get(run_id)
         if checkpoint is None:
-            return {
+            result = {
                 "state": "blocked",
                 "reason": "trusted_checkpoint_not_found",
                 "human_decision": decision.to_dict(),
                 "target_load": _blocked_load("trusted_checkpoint_not_found"),
             }
-        monitor = _resume_monitor(run_id, self.run_root)
+            self._event(
+                monitor,
+                run_id,
+                "resume_validation_failed",
+                {"reason": "trusted_checkpoint_not_found", "decision": decision.to_dict()},
+            )
+            monitor.finish("blocked", {"workflow": result})
+            self._audit(run_id, "workflow_completed", {"workflow": result})
+            return result
         if decision.action != "approve_load":
-            self._audit(run_id, "human_decision_recorded", {"decision": decision.to_dict(), "accepted": False})
+            self._event(monitor, run_id, "human_decision_recorded", {"decision": decision.to_dict(), "accepted": False})
             result = {
                 "state": "closed",
                 "reason": decision.action,
@@ -343,17 +367,25 @@ class WorkflowEngine:
             monitor.finish("closed", {"workflow": result})
             self._audit(run_id, "workflow_completed", {"workflow": result})
             return result
-        if checkpoint["state"] != "checkpoint_required":
-            self._audit(run_id, "human_decision_recorded", {"decision": decision.to_dict(), "accepted": False})
+        validation_error = _validate_trusted_checkpoint(run_id, self.template, checkpoint, decision)
+        if validation_error is not None:
+            self._event(monitor, run_id, "human_decision_recorded", {"decision": decision.to_dict(), "accepted": False})
             result = {
                 "state": "blocked",
-                "reason": "run_not_at_load_checkpoint",
+                "reason": validation_error,
                 "human_decision": decision.to_dict(),
-                "target_load": _blocked_load("run_not_at_load_checkpoint"),
+                "target_load": _blocked_load(validation_error),
             }
+            self._event(
+                monitor,
+                run_id,
+                "resume_validation_failed",
+                {"reason": validation_error, "decision": decision.to_dict()},
+            )
             monitor.finish("blocked", {"workflow": result})
             self._audit(run_id, "workflow_completed", {"workflow": result})
             return result
+        self._event(monitor, run_id, "resume_validation_passed", {"checkpoint": checkpoint["checkpoint"]})
 
         records = [
             deepcopy(record)
@@ -362,23 +394,38 @@ class WorkflowEngine:
         ]
         approved_ids = {record["patent_id"] for record in records}
         if approved_ids != set(decision.approved_record_ids):
-            self._audit(run_id, "human_decision_recorded", {"decision": decision.to_dict(), "accepted": False})
+            self._event(monitor, run_id, "human_decision_recorded", {"decision": decision.to_dict(), "accepted": False})
             result = {
                 "state": "blocked",
                 "reason": "approved_records_not_in_checkpoint",
                 "human_decision": decision.to_dict(),
                 "target_load": _blocked_load("approved_records_not_in_checkpoint"),
             }
+            self._event(
+                monitor,
+                run_id,
+                "resume_validation_failed",
+                {"reason": "approved_records_not_in_checkpoint", "decision": decision.to_dict()},
+            )
             monitor.finish("blocked", {"workflow": result})
             self._audit(run_id, "workflow_completed", {"workflow": result})
             return result
-        self._audit(run_id, "human_decision_recorded", {"decision": decision.to_dict(), "accepted": True})
-        monitor.event("human_decision_recorded", {"decision": decision.to_dict(), "accepted": True})
+        self._event(monitor, run_id, "human_decision_recorded", {"decision": decision.to_dict(), "accepted": True})
         monitor.event(
             "workflow_node_started",
             {"step_id": "load_target_d", "system": "D", "action": "load"},
         )
         try:
+            self._event(
+                monitor,
+                run_id,
+                "target_load_attempted",
+                {
+                    "system": "D",
+                    "checkpoint": checkpoint["checkpoint"],
+                    "approved_record_ids": decision.approved_record_ids,
+                },
+            )
             load_result = self.connector.load_d(checkpoint["period"], records)
         except Exception as exc:  # noqa: BLE001 - target failure becomes workflow state.
             result = {
@@ -389,6 +436,12 @@ class WorkflowEngine:
                 "human_decision": decision.to_dict(),
                 "target_load": _blocked_load("target_load_failed"),
             }
+            self._event(
+                monitor,
+                run_id,
+                "target_load_failed",
+                {"system": "D", "error_type": type(exc).__name__},
+            )
             monitor.finish("failed", {"workflow": result})
             self._audit(run_id, "workflow_completed", {"workflow": result})
             return result
@@ -402,7 +455,7 @@ class WorkflowEngine:
                 "result": load_result,
             },
         }
-        monitor.event("workflow_node_completed", {"step_id": "load_target_d", "system": "D", "action": "load"})
+        self._event(monitor, run_id, "workflow_node_completed", {"step_id": "load_target_d", "system": "D", "action": "load"})
         monitor.finish("completed", {"workflow": result})
         self._audit(run_id, "workflow_completed", {"workflow": result})
         self._checkpoint_store.pop(run_id, None)
@@ -668,6 +721,7 @@ def _checkpoint_packet(
     template: WorkflowTemplate,
     period: str,
     reconciliation: dict[str, Any],
+    trusted_checkpoint: dict[str, Any],
 ) -> dict[str, Any]:
     return {
         **_review_packet(
@@ -680,7 +734,97 @@ def _checkpoint_packet(
         "failed_rules": [],
         "proposed_resolution": "Approve validated records for target-system D load.",
         "allowed_actions": ["approve_load", "reject_workflow", "request_manual_correction"],
+        "trusted_checkpoint": trusted_checkpoint,
     }
+
+
+def _trusted_checkpoint(
+    *,
+    run_id: str,
+    template: WorkflowTemplate,
+    period: str,
+    records: list[Record],
+    reconciliation: dict[str, Any],
+) -> dict[str, Any]:
+    payload = _checkpoint_payload(
+        run_id=run_id,
+        template=template,
+        period=period,
+        records=records,
+        reconciliation=reconciliation,
+    )
+    checkpoint_hash = _stable_hash(payload)
+    return {
+        "schema_version": CHECKPOINT_SCHEMA_VERSION,
+        "identity": f"{template.template_id}:{template.template_version}:{run_id}:{checkpoint_hash[:16]}",
+        "hash": checkpoint_hash,
+        "run_id": run_id,
+        "workflow_id": template.workflow_id,
+        "template_id": template.template_id,
+        "template_version": template.template_version,
+        "period": period,
+        "record_ids": [record["patent_id"] for record in payload["records"]],
+        "trusted_boundary": "engine-created checkpoint hash; approval must echo identity and hash",
+    }
+
+
+def _validate_trusted_checkpoint(
+    run_id: str,
+    template: WorkflowTemplate,
+    checkpoint: dict[str, Any],
+    decision: HumanDecision,
+) -> str | None:
+    if checkpoint.get("state") != "checkpoint_required":
+        return "run_not_at_load_checkpoint"
+    trusted_checkpoint = checkpoint.get("checkpoint")
+    if not isinstance(trusted_checkpoint, dict):
+        return "trusted_checkpoint_missing"
+    if not decision.checkpoint_identity or not decision.checkpoint_hash:
+        return "trusted_checkpoint_identity_missing"
+    if decision.checkpoint_identity != trusted_checkpoint.get("identity"):
+        return "trusted_checkpoint_identity_mismatch"
+    if decision.checkpoint_hash != trusted_checkpoint.get("hash"):
+        return "trusted_checkpoint_hash_mismatch"
+    if trusted_checkpoint.get("run_id") != run_id or trusted_checkpoint.get("schema_version") != CHECKPOINT_SCHEMA_VERSION:
+        return "trusted_checkpoint_metadata_mismatch"
+    expected = _trusted_checkpoint(
+        run_id=run_id,
+        template=template,
+        period=str(checkpoint.get("period", "")),
+        records=list(checkpoint.get("records", [])),
+        reconciliation=checkpoint.get("reconciliation", {}),
+    )
+    if expected["hash"] != trusted_checkpoint.get("hash"):
+        return "trusted_checkpoint_hash_mismatch"
+    if expected["identity"] != trusted_checkpoint.get("identity"):
+        return "trusted_checkpoint_identity_mismatch"
+    return None
+
+
+def _checkpoint_payload(
+    *,
+    run_id: str,
+    template: WorkflowTemplate,
+    period: str,
+    records: list[Record],
+    reconciliation: dict[str, Any],
+) -> dict[str, Any]:
+    sorted_records = sorted((dict(record) for record in records), key=lambda record: str(record.get("patent_id", "")))
+    return {
+        "schema_version": CHECKPOINT_SCHEMA_VERSION,
+        "run_id": run_id,
+        "workflow_id": template.workflow_id,
+        "template_id": template.template_id,
+        "template_version": template.template_version,
+        "period": period,
+        "records": sorted_records,
+        "reconciliation": reconciliation,
+    }
+
+
+def _stable_hash(data: dict[str, Any]) -> str:
+    serialized = json.dumps(data, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(serialized.encode("utf-8")).hexdigest()
 
 
 def _result(

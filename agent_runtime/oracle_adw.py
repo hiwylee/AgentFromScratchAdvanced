@@ -7,13 +7,15 @@ query safety validation before real execution is enabled.
 
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
+import hashlib
+import json
 import os
 from pathlib import Path
 import re
 import shutil
 import subprocess
-from typing import Callable, Mapping
+from typing import Any, Callable, Mapping
 
 from agent_runtime.redaction import REDACTION, redact
 
@@ -286,6 +288,85 @@ class SqlclRunResult:
 
 
 @dataclass(frozen=True)
+class SqlclReadOnlyExecutionSettings:
+    timeout_seconds: int = 30
+    row_limit: int = 1000
+    max_output_bytes: int = 1_048_576
+    max_error_bytes: int = 65_536
+
+
+@dataclass(frozen=True)
+class SqlclReadOnlyExecutionPlan:
+    command: tuple[str, ...]
+    env: Mapping[str, str]
+    stdin: str = field(repr=False)
+    timeout_seconds: int
+    row_limit: int
+    max_output_bytes: int
+    max_error_bytes: int
+    sql_sha256: str
+    working_user: str
+    _sensitive_values: tuple[str, ...] = field(default=(), repr=False, compare=False)
+
+    def to_redacted_dict(self) -> dict[str, object]:
+        return {
+            "command": list(self.command),
+            "env": redact(dict(self.env)),
+            "stdin": REDACTION,
+            "stdin_contains_credentials": True,
+            "timeout_seconds": self.timeout_seconds,
+            "row_limit": self.row_limit,
+            "max_output_bytes": self.max_output_bytes,
+            "max_error_bytes": self.max_error_bytes,
+            "sql_sha256": self.sql_sha256,
+            "working_user": self.working_user,
+        }
+
+    def redact_text(self, text: str) -> str:
+        redacted = redact(text)
+        for value in self._sensitive_values:
+            if value and len(value) >= 4:
+                redacted = redacted.replace(value, REDACTION)
+        redacted = re.sub(
+            rf"(?i)\bconnect\s+{re.escape(self.working_user)}\b[^\r\n]*",
+            f"connect {REDACTION}",
+            redacted,
+        )
+        return redacted
+
+
+@dataclass(frozen=True)
+class SqlclQueryResult:
+    columns: tuple[str, ...]
+    rows: tuple[dict[str, Any], ...]
+    row_count: int
+
+    def to_redacted_dict(self) -> dict[str, object]:
+        return redact(asdict(self))
+
+
+@dataclass(frozen=True)
+class SqlclExecutionError:
+    code: str
+    message: str
+    returncode: int | None = None
+    stderr: str | None = None
+
+    def to_redacted_dict(self) -> dict[str, object]:
+        return redact(asdict(self))
+
+
+@dataclass(frozen=True)
+class SqlclExecutionOutcome:
+    ok: bool
+    result: SqlclQueryResult | None = None
+    error: SqlclExecutionError | None = None
+
+    def to_redacted_dict(self) -> dict[str, object]:
+        return redact(asdict(self))
+
+
+@dataclass(frozen=True)
 class SqlclStatus:
     configured_path: str | None
     resolved_path: str | None
@@ -451,6 +532,160 @@ def verify_wallet_paths(config: OracleAdwConfig) -> WalletPathStatus:
         wallet_file_is_file=wallet_file_is_file,
         ok=(wallet_path_is_dir or wallet_file_is_file),
     )
+
+
+def build_read_only_sqlcl_execution_plan(
+    config: OracleAdwConfig,
+    sql: str,
+    *,
+    settings: SqlclReadOnlyExecutionSettings | None = None,
+) -> SqlclReadOnlyExecutionPlan:
+    effective_settings = settings or SqlclReadOnlyExecutionSettings()
+    _validate_execution_settings(effective_settings)
+    require_read_only_sql(sql)
+
+    if not config.sqlcl_path:
+        raise ValueError("SQLCL_PATH is required for SQLcl execution planning")
+    working_user = _required_working_user_identifier(config.db_user)
+    if not config.db_user_pass:
+        raise ValueError("DB_USER_PASS is required for SQLcl execution planning")
+    if not config.db_dsn:
+        raise ValueError("DB_DSN is required for SQLcl execution planning")
+    _require_sqlcl_connect_component(config.db_user_pass, name="DB_USER_PASS")
+    _require_sqlcl_connect_component(config.db_dsn, name="DB_DSN")
+
+    env: dict[str, str] = {}
+    if config.db_wallet_path:
+        env["TNS_ADMIN"] = str(Path(config.db_wallet_path).expanduser())
+
+    normalized_sql = _strip_trailing_semicolon(sql.strip())
+    limited_sql = _wrap_sql_with_row_limit(
+        normalized_sql,
+        row_limit=effective_settings.row_limit,
+    )
+    stdin = _build_sqlcl_read_only_stdin(
+        working_user=working_user,
+        password=config.db_user_pass,
+        dsn=config.db_dsn,
+        limited_sql=limited_sql,
+    )
+    sensitive_values = tuple(
+        value
+        for value in (
+            config.admin_user_pass,
+            config.db_user_pass,
+            config.db_dsn,
+            config.db_wallet_pass,
+        )
+        if value
+    )
+    return SqlclReadOnlyExecutionPlan(
+        command=(str(Path(config.sqlcl_path).expanduser()), "-S", "-L", "-nolog"),
+        env=env,
+        stdin=stdin,
+        timeout_seconds=effective_settings.timeout_seconds,
+        row_limit=effective_settings.row_limit,
+        max_output_bytes=effective_settings.max_output_bytes,
+        max_error_bytes=effective_settings.max_error_bytes,
+        sql_sha256=hashlib.sha256(normalized_sql.encode("utf-8")).hexdigest(),
+        working_user=working_user,
+        _sensitive_values=sensitive_values,
+    )
+
+
+def classify_sqlcl_read_only_result(
+    plan: SqlclReadOnlyExecutionPlan,
+    result: SqlclRunResult,
+) -> SqlclExecutionOutcome:
+    if _byte_length(result.stdout) > plan.max_output_bytes:
+        return SqlclExecutionOutcome(
+            ok=False,
+            error=SqlclExecutionError(
+                code="output_too_large",
+                message="SQLcl stdout exceeded the configured capture limit.",
+                returncode=result.returncode,
+            ),
+        )
+    if _byte_length(result.stderr) > plan.max_error_bytes:
+        return SqlclExecutionOutcome(
+            ok=False,
+            error=SqlclExecutionError(
+                code="error_output_too_large",
+                message="SQLcl stderr exceeded the configured capture limit.",
+                returncode=result.returncode,
+            ),
+        )
+    if result.returncode != 0:
+        return SqlclExecutionOutcome(
+            ok=False,
+            error=SqlclExecutionError(
+                code="sqlcl_error",
+                message="SQLcl returned a non-zero status for the read-only query.",
+                returncode=result.returncode,
+                stderr=plan.redact_text(result.stderr[-plan.max_error_bytes :]),
+            ),
+        )
+
+    try:
+        parsed = parse_sqlcl_json_output(result.stdout, row_limit=plan.row_limit)
+    except ValueError as exc:
+        return SqlclExecutionOutcome(
+            ok=False,
+            error=SqlclExecutionError(
+                code=str(exc),
+                message="SQLcl output could not be parsed as bounded JSON rows.",
+                returncode=result.returncode,
+            ),
+        )
+    return SqlclExecutionOutcome(ok=True, result=_redact_query_result(plan, parsed))
+
+
+def classify_sqlcl_timeout(
+    plan: SqlclReadOnlyExecutionPlan,
+    exc: subprocess.TimeoutExpired,
+) -> SqlclExecutionOutcome:
+    return SqlclExecutionOutcome(
+        ok=False,
+        error=SqlclExecutionError(
+            code="timeout",
+            message=f"SQLcl read-only query exceeded {plan.timeout_seconds} seconds.",
+            stderr=plan.redact_text(str(exc.stderr or "")) or None,
+        ),
+    )
+
+
+def parse_sqlcl_json_output(stdout: str, *, row_limit: int) -> SqlclQueryResult:
+    try:
+        payload = json.loads(stdout)
+    except json.JSONDecodeError as exc:
+        raise ValueError("json_parse_failed") from exc
+
+    columns, rows = _extract_sqlcl_rows(payload)
+    if len(rows) > row_limit:
+        raise ValueError("row_limit_exceeded")
+    if not columns and rows:
+        columns = tuple(rows[0].keys())
+    return SqlclQueryResult(
+        columns=tuple(columns),
+        rows=tuple(rows),
+        row_count=len(rows),
+    )
+
+
+def build_redacted_sqlcl_audit_record(
+    event: str,
+    plan: SqlclReadOnlyExecutionPlan,
+    outcome: SqlclExecutionOutcome | None = None,
+) -> dict[str, object]:
+    record: dict[str, object] = {
+        "event": event,
+        "backend": "sqlcl",
+        "mode": "read_only",
+        "execution": plan.to_redacted_dict(),
+    }
+    if outcome is not None:
+        record["outcome"] = outcome.to_redacted_dict()
+    return redact(record)
 
 
 def validate_read_only_sql(sql: str) -> SqlPolicyResult:
@@ -696,6 +931,7 @@ def _run_sqlcl_version(command: list[str]) -> SqlclRunResult:
         command,
         capture_output=True,
         check=False,
+        env=_minimal_sqlcl_version_env(),
         text=True,
         timeout=10,
     )
@@ -706,11 +942,148 @@ def _run_sqlcl_version(command: list[str]) -> SqlclRunResult:
     )
 
 
+def _minimal_sqlcl_version_env() -> dict[str, str]:
+    env: dict[str, str] = {}
+    for key in ("PATH", "HOME", "LANG", "LC_ALL"):
+        value = os.environ.get(key)
+        if value:
+            env[key] = value
+    return env
+
+
 def _empty_to_none(value: str | None) -> str | None:
     if value is None:
         return None
     stripped = value.strip()
     return stripped or None
+
+
+def _validate_execution_settings(settings: SqlclReadOnlyExecutionSettings) -> None:
+    if not 1 <= settings.timeout_seconds <= 300:
+        raise ValueError("timeout_seconds must be between 1 and 300")
+    if not 1 <= settings.row_limit <= 10_000:
+        raise ValueError("row_limit must be between 1 and 10000")
+    if not 1_024 <= settings.max_output_bytes <= 10_485_760:
+        raise ValueError("max_output_bytes must be between 1024 and 10485760")
+    if not 1_024 <= settings.max_error_bytes <= 1_048_576:
+        raise ValueError("max_error_bytes must be between 1024 and 1048576")
+
+
+def _strip_trailing_semicolon(sql: str) -> str:
+    return sql[:-1].rstrip() if sql.endswith(";") else sql
+
+
+def _wrap_sql_with_row_limit(sql: str, *, row_limit: int) -> str:
+    return f"SELECT * FROM (\n{sql}\n) WHERE ROWNUM <= {row_limit}"
+
+
+def _build_sqlcl_read_only_stdin(
+    *,
+    working_user: str,
+    password: str,
+    dsn: str,
+    limited_sql: str,
+) -> str:
+    escaped_password = password.replace('"', '""')
+    return "\n".join(
+        (
+            "set echo off",
+            "set feedback off",
+            "set heading off",
+            "set pagesize 0",
+            "set sqlformat json",
+            "set define off",
+            "whenever sqlerror exit sql.sqlcode",
+            "whenever oserror exit failure",
+            f'connect {working_user}/"{escaped_password}"@{dsn}',
+            f"{limited_sql};",
+            "exit",
+            "",
+        )
+    )
+
+
+def _require_sqlcl_connect_component(value: str, *, name: str) -> None:
+    if any(_is_disallowed_sqlcl_connect_char(char) for char in value):
+        raise ValueError(
+            f"{name} contains characters that are not allowed in SQLcl connect input"
+        )
+
+
+def _is_disallowed_sqlcl_connect_char(char: str) -> bool:
+    return ord(char) < 32 or ord(char) == 127
+
+
+def _byte_length(value: str) -> int:
+    return len(value.encode("utf-8"))
+
+
+def _extract_sqlcl_rows(payload: object) -> tuple[tuple[str, ...], list[dict[str, Any]]]:
+    if isinstance(payload, list):
+        return (), [_string_keyed_row(item) for item in payload]
+    if not isinstance(payload, dict):
+        raise ValueError("json_shape_not_supported")
+
+    result_payload = payload
+    results = payload.get("results")
+    if isinstance(results, list):
+        if not results:
+            return (), []
+        first_result = results[0]
+        if not isinstance(first_result, dict):
+            raise ValueError("json_shape_not_supported")
+        result_payload = first_result
+
+    columns = _extract_sqlcl_columns(result_payload.get("columns"))
+    items = result_payload.get("items", result_payload.get("rows", []))
+    if items is None:
+        items = []
+    if not isinstance(items, list):
+        raise ValueError("json_shape_not_supported")
+    return columns, [_string_keyed_row(item) for item in items]
+
+
+def _extract_sqlcl_columns(columns_payload: object) -> tuple[str, ...]:
+    if not isinstance(columns_payload, list):
+        return ()
+    columns: list[str] = []
+    for item in columns_payload:
+        if isinstance(item, str):
+            columns.append(item)
+        elif isinstance(item, dict):
+            name = item.get("name") or item.get("columnName") or item.get("label")
+            if name is not None:
+                columns.append(str(name))
+    return tuple(columns)
+
+
+def _string_keyed_row(row: object) -> dict[str, Any]:
+    if not isinstance(row, dict):
+        raise ValueError("json_shape_not_supported")
+    return {str(key): value for key, value in row.items()}
+
+
+def _redact_query_result(
+    plan: SqlclReadOnlyExecutionPlan,
+    result: SqlclQueryResult,
+) -> SqlclQueryResult:
+    return SqlclQueryResult(
+        columns=result.columns,
+        rows=tuple(_redact_sensitive_values(plan, row) for row in result.rows),
+        row_count=result.row_count,
+    )
+
+
+def _redact_sensitive_values(plan: SqlclReadOnlyExecutionPlan, value: Any) -> Any:
+    if isinstance(value, dict):
+        return {key: _redact_sensitive_values(plan, item) for key, item in value.items()}
+    if isinstance(value, list):
+        return [_redact_sensitive_values(plan, item) for item in value]
+    if isinstance(value, tuple):
+        return tuple(_redact_sensitive_values(plan, item) for item in value)
+    if isinstance(value, str):
+        return plan.redact_text(value)
+    return value
 
 
 def _required_identifier(value: str | None, env_name: str) -> str:
@@ -1066,11 +1439,21 @@ __all__ = [
     "SCHEMA_TABLES_QUERY",
     "SAMPLE_SCHEMA_PROFILE_QUERY",
     "SampleDatasetRecommendation",
+    "SqlclExecutionError",
+    "SqlclExecutionOutcome",
+    "SqlclQueryResult",
+    "SqlclReadOnlyExecutionPlan",
+    "SqlclReadOnlyExecutionSettings",
     "SqlPolicyResult",
     "SqlclRunResult",
     "SqlclStatus",
     "WalletPathStatus",
     "build_working_user_provisioning_plan",
+    "build_read_only_sqlcl_execution_plan",
+    "build_redacted_sqlcl_audit_record",
+    "classify_sqlcl_read_only_result",
+    "classify_sqlcl_timeout",
+    "parse_sqlcl_json_output",
     "recommend_sample_dataset",
     "require_read_only_sql",
     "resolve_sqlcl_path",

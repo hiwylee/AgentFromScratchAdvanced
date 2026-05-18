@@ -1,0 +1,550 @@
+{
+  "schema_version": "agent-runtime.schema-metadata.v1",
+  "profile_id": "oracle_adw_sh.v1",
+  "source": {
+    "database": "oracle_adw",
+    "introspected_as": "DB_USER",
+    "introspection_mode": "working_user_visible",
+    "captured_at": "2026-05-17T00:00:00Z"
+  },
+  "tables": [
+    {
+      "table_id": "SH.SALES",
+      "owner": "SH",
+      "name": "SALES",
+      "kind": "table",
+      "role": "fact",
+      "description": "Sales fact table for revenue, quantity, product, customer, channel, promotion, and time analysis.",
+      "synonyms": ["SALES", "REVENUE", "TRANSACTIONS"],
+      "curated_priority": "primary",
+      "row_count_estimate": null,
+      "columns": [
+        {
+          "name": "PROD_ID",
+          "data_type": "NUMBER",
+          "nullable": false,
+          "semantic_type": "foreign_key",
+          "business_terms": ["product"],
+          "description": "Product dimension key.",
+          "sample_policy": "never"
+        },
+        {
+          "name": "CUST_ID",
+          "data_type": "NUMBER",
+          "nullable": false,
+          "semantic_type": "foreign_key",
+          "business_terms": ["customer"],
+          "description": "Customer dimension key.",
+          "sample_policy": "never"
+        },
+        {
+          "name": "TIME_ID",
+          "data_type": "DATE",
+          "nullable": false,
+          "semantic_type": "date_key",
+          "business_terms": ["date", "time", "month", "year"],
+          "description": "Sales date key used for time-series analysis.",
+          "sample_policy": "never"
+        },
+        {
+          "name": "CHANNEL_ID",
+          "data_type": "NUMBER",
+          "nullable": false,
+          "semantic_type": "foreign_key",
+          "business_terms": ["channel"],
+          "description": "Sales channel dimension key.",
+          "sample_policy": "never"
+        },
+        {
+          "name": "PROMO_ID",
+          "data_type": "NUMBER",
+          "nullable": false,
+          "semantic_type": "foreign_key",
+          "business_terms": ["promotion", "campaign"],
+          "description": "Promotion dimension key.",
+          "sample_policy": "never"
+        },
+        {
+          "name": "QUANTITY_SOLD",
+          "data_type": "NUMBER",
+          "nullable": false,
+          "semantic_type": "quantity",
+          "business_terms": ["quantity sold", "units sold", "volume"],
+          "description": "Units sold measure.",
+          "sample_policy": "aggregate_only"
+        },
+        {
+          "name": "AMOUNT_SOLD",
+          "data_type": "NUMBER",
+          "nullable": false,
+          "semantic_type": "currency_amount",
+          "business_terms": ["sales amount", "revenue", "sales"],
+          "description": "Sales amount measure.",
+          "sample_policy": "aggregate_only"
+        }
+      ],
+      "relationships": [
+        {
+          "type": "foreign_key",
+          "from_columns": ["PROD_ID"],
+          "to_table_id": "SH.PRODUCTS",
+          "to_columns": ["PROD_ID"],
+          "confidence": "database_constraint"
+        },
+        {
+          "type": "foreign_key",
+          "from_columns": ["CUST_ID"],
+          "to_table_id": "SH.CUSTOMERS",
+          "to_columns": ["CUST_ID"],
+          "confidence": "database_constraint"
+        },
+        {
+          "type": "foreign_key",
+          "from_columns": ["TIME_ID"],
+          "to_table_id": "SH.TIMES",
+          "to_columns": ["TIME_ID"],
+          "confidence": "database_constraint"
+        },
+        {
+          "type": "foreign_key",
+          "from_columns": ["CHANNEL_ID"],
+          "to_table_id": "SH.CHANNELS",
+          "to_columns": ["CHANNEL_ID"],
+          "confidence": "database_constraint"
+        },
+        {
+          "type": "foreign_key",
+          "from_columns": ["PROMO_ID"],
+          "to_table_id": "SH.PROMOTIONS",
+          "to_columns": ["PROMO_ID"],
+          "confidence": "database_constraint"
+        }
+      ]
+    },
+    {
+      "table_id": "SH.PRODUCTS",
+      "owner": "SH",
+      "name": "PRODUCTS",
+      "kind": "table",
+      "role": "dimension",
+      "description": "Product dimension for product, subcategory, category, status, supplier, and price analysis.",
+      "synonyms": ["PRODUCTS", "ITEMS", "MERCHANDISE"],
+      "curated_priority": "primary",
+      "row_count_estimate": null,
+      "columns": [
+        {
+          "name": "PROD_ID",
+          "data_type": "NUMBER",
+          "nullable": false,
+          "semantic_type": "primary_key",
+          "business_terms": ["product id"],
+          "description": "Product key.",
+          "sample_policy": "never"
+        },
+        {
+          "name": "PROD_NAME",
+          "data_type": "VARCHAR2",
+          "nullable": false,
+          "semantic_type": "name",
+          "business_terms": ["product name"],
+          "description": "Product name; do not expose raw values unless separately approved.",
+          "sample_policy": "never"
+        },
+        {
+          "name": "PROD_SUBCATEGORY",
+          "data_type": "VARCHAR2",
+          "nullable": false,
+          "semantic_type": "category",
+          "business_terms": ["product subcategory", "subcategory"],
+          "description": "Product subcategory label.",
+          "sample_policy": "allowlisted_category"
+        },
+        {
+          "name": "PROD_CATEGORY",
+          "data_type": "VARCHAR2",
+          "nullable": false,
+          "semantic_type": "category",
+          "business_terms": ["product category", "category"],
+          "description": "Product category label for rollups and filters.",
+          "sample_policy": "allowlisted_category"
+        },
+        {
+          "name": "PROD_STATUS",
+          "data_type": "VARCHAR2",
+          "nullable": false,
+          "semantic_type": "status",
+          "business_terms": ["product status"],
+          "description": "Lifecycle or availability status for the product.",
+          "sample_policy": "never"
+        },
+        {
+          "name": "PROD_LIST_PRICE",
+          "data_type": "NUMBER",
+          "nullable": true,
+          "semantic_type": "currency_amount",
+          "business_terms": ["list price", "price"],
+          "description": "List price for the product.",
+          "sample_policy": "aggregate_only"
+        },
+        {
+          "name": "PROD_MIN_PRICE",
+          "data_type": "NUMBER",
+          "nullable": true,
+          "semantic_type": "currency_amount",
+          "business_terms": ["minimum price", "min price"],
+          "description": "Minimum price for the product.",
+          "sample_policy": "aggregate_only"
+        }
+      ],
+      "relationships": []
+    },
+    {
+      "table_id": "SH.CUSTOMERS",
+      "owner": "SH",
+      "name": "CUSTOMERS",
+      "kind": "table",
+      "role": "dimension",
+      "description": "Customer dimension for demographic and geography rollups. Personal identifiers should not be exposed in compact context.",
+      "synonyms": ["CUSTOMERS", "BUYERS", "CONSUMERS"],
+      "curated_priority": "primary",
+      "row_count_estimate": null,
+      "columns": [
+        {
+          "name": "CUST_ID",
+          "data_type": "NUMBER",
+          "nullable": false,
+          "semantic_type": "primary_key",
+          "business_terms": ["customer id"],
+          "description": "Customer key.",
+          "sample_policy": "never"
+        },
+        {
+          "name": "COUNTRY_ID",
+          "data_type": "NUMBER",
+          "nullable": false,
+          "semantic_type": "foreign_key",
+          "business_terms": ["country", "customer country"],
+          "description": "Country dimension key for customer geography.",
+          "sample_policy": "never"
+        },
+        {
+          "name": "CUST_GENDER",
+          "data_type": "CHAR",
+          "nullable": true,
+          "semantic_type": "demographic_category",
+          "business_terms": ["gender"],
+          "description": "Customer gender category for aggregate analysis.",
+          "sample_policy": "never"
+        },
+        {
+          "name": "CUST_YEAR_OF_BIRTH",
+          "data_type": "NUMBER",
+          "nullable": true,
+          "semantic_type": "year",
+          "business_terms": ["birth year", "age cohort"],
+          "description": "Birth year for age cohort analysis.",
+          "sample_policy": "aggregate_only"
+        },
+        {
+          "name": "CUST_MARITAL_STATUS",
+          "data_type": "VARCHAR2",
+          "nullable": true,
+          "semantic_type": "demographic_category",
+          "business_terms": ["marital status"],
+          "description": "Marital status category for aggregate analysis.",
+          "sample_policy": "never"
+        },
+        {
+          "name": "CUST_INCOME_LEVEL",
+          "data_type": "VARCHAR2",
+          "nullable": true,
+          "semantic_type": "demographic_category",
+          "business_terms": ["income level", "income band"],
+          "description": "Income level band for aggregate analysis.",
+          "sample_policy": "never"
+        },
+        {
+          "name": "CUST_CITY",
+          "data_type": "VARCHAR2",
+          "nullable": true,
+          "semantic_type": "geography",
+          "business_terms": ["city"],
+          "description": "Customer city for aggregate geographic analysis.",
+          "sample_policy": "never"
+        },
+        {
+          "name": "CUST_STATE_PROVINCE",
+          "data_type": "VARCHAR2",
+          "nullable": true,
+          "semantic_type": "geography",
+          "business_terms": ["state", "province"],
+          "description": "Customer state or province for aggregate geographic analysis.",
+          "sample_policy": "never"
+        }
+      ],
+      "relationships": [
+        {
+          "type": "foreign_key",
+          "from_columns": ["COUNTRY_ID"],
+          "to_table_id": "SH.COUNTRIES",
+          "to_columns": ["COUNTRY_ID"],
+          "confidence": "database_constraint"
+        }
+      ]
+    },
+    {
+      "table_id": "SH.CHANNELS",
+      "owner": "SH",
+      "name": "CHANNELS",
+      "kind": "table",
+      "role": "dimension",
+      "description": "Sales channel dimension for channel mix, class, and route-to-market analysis.",
+      "synonyms": ["CHANNELS", "SALES CHANNELS"],
+      "curated_priority": "primary",
+      "row_count_estimate": null,
+      "columns": [
+        {
+          "name": "CHANNEL_ID",
+          "data_type": "NUMBER",
+          "nullable": false,
+          "semantic_type": "primary_key",
+          "business_terms": ["channel id"],
+          "description": "Channel key.",
+          "sample_policy": "never"
+        },
+        {
+          "name": "CHANNEL_DESC",
+          "data_type": "VARCHAR2",
+          "nullable": false,
+          "semantic_type": "category",
+          "business_terms": ["channel", "channel description"],
+          "description": "Business label for the sales channel.",
+          "sample_policy": "allowlisted_category"
+        },
+        {
+          "name": "CHANNEL_CLASS",
+          "data_type": "VARCHAR2",
+          "nullable": true,
+          "semantic_type": "category",
+          "business_terms": ["channel class"],
+          "description": "Higher-level channel grouping.",
+          "sample_policy": "allowlisted_category"
+        }
+      ],
+      "relationships": []
+    },
+    {
+      "table_id": "SH.TIMES",
+      "owner": "SH",
+      "name": "TIMES",
+      "kind": "table",
+      "role": "dimension",
+      "description": "Time dimension for day, week, month, quarter, calendar year, and fiscal year analysis.",
+      "synonyms": ["TIMES", "DATES", "CALENDAR"],
+      "curated_priority": "primary",
+      "row_count_estimate": null,
+      "columns": [
+        {
+          "name": "TIME_ID",
+          "data_type": "DATE",
+          "nullable": false,
+          "semantic_type": "primary_key",
+          "business_terms": ["date", "time id"],
+          "description": "Date key.",
+          "sample_policy": "never"
+        },
+        {
+          "name": "DAY_NAME",
+          "data_type": "VARCHAR2",
+          "nullable": false,
+          "semantic_type": "date_part",
+          "business_terms": ["day name", "weekday"],
+          "description": "Name of day in week.",
+          "sample_policy": "never"
+        },
+        {
+          "name": "CALENDAR_MONTH_NUMBER",
+          "data_type": "NUMBER",
+          "nullable": false,
+          "semantic_type": "month_number",
+          "business_terms": ["month number", "month"],
+          "description": "Calendar month number.",
+          "sample_policy": "never"
+        },
+        {
+          "name": "CALENDAR_MONTH_DESC",
+          "data_type": "VARCHAR2",
+          "nullable": false,
+          "semantic_type": "month",
+          "business_terms": ["month", "month name"],
+          "description": "Calendar month label for grouping.",
+          "sample_policy": "never"
+        },
+        {
+          "name": "CALENDAR_QUARTER_DESC",
+          "data_type": "VARCHAR2",
+          "nullable": false,
+          "semantic_type": "quarter",
+          "business_terms": ["quarter"],
+          "description": "Calendar quarter label for grouping.",
+          "sample_policy": "never"
+        },
+        {
+          "name": "CALENDAR_YEAR",
+          "data_type": "NUMBER",
+          "nullable": false,
+          "semantic_type": "year",
+          "business_terms": ["year", "calendar year"],
+          "description": "Calendar year.",
+          "sample_policy": "never"
+        },
+        {
+          "name": "FISCAL_MONTH_NUMBER",
+          "data_type": "NUMBER",
+          "nullable": false,
+          "semantic_type": "month_number",
+          "business_terms": ["fiscal month"],
+          "description": "Fiscal month number.",
+          "sample_policy": "never"
+        },
+        {
+          "name": "FISCAL_YEAR",
+          "data_type": "NUMBER",
+          "nullable": false,
+          "semantic_type": "year",
+          "business_terms": ["fiscal year"],
+          "description": "Fiscal year.",
+          "sample_policy": "never"
+        }
+      ],
+      "relationships": []
+    },
+    {
+      "table_id": "SH.PROMOTIONS",
+      "owner": "SH",
+      "name": "PROMOTIONS",
+      "kind": "table",
+      "role": "dimension",
+      "description": "Promotion dimension for campaign, promotion category, date range, and promotion cost analysis.",
+      "synonyms": ["PROMOTIONS", "PROMOS", "CAMPAIGNS"],
+      "curated_priority": "primary",
+      "row_count_estimate": null,
+      "columns": [
+        {
+          "name": "PROMO_ID",
+          "data_type": "NUMBER",
+          "nullable": false,
+          "semantic_type": "primary_key",
+          "business_terms": ["promotion id"],
+          "description": "Promotion key.",
+          "sample_policy": "never"
+        },
+        {
+          "name": "PROMO_NAME",
+          "data_type": "VARCHAR2",
+          "nullable": false,
+          "semantic_type": "name",
+          "business_terms": ["promotion name", "campaign name"],
+          "description": "Promotion name; do not expose raw values unless separately approved.",
+          "sample_policy": "never"
+        },
+        {
+          "name": "PROMO_SUBCATEGORY",
+          "data_type": "VARCHAR2",
+          "nullable": true,
+          "semantic_type": "category",
+          "business_terms": ["promotion subcategory"],
+          "description": "Promotion subcategory for rollups.",
+          "sample_policy": "never"
+        },
+        {
+          "name": "PROMO_CATEGORY",
+          "data_type": "VARCHAR2",
+          "nullable": true,
+          "semantic_type": "category",
+          "business_terms": ["promotion category"],
+          "description": "Promotion category for rollups.",
+          "sample_policy": "never"
+        },
+        {
+          "name": "PROMO_COST",
+          "data_type": "NUMBER",
+          "nullable": true,
+          "semantic_type": "currency_amount",
+          "business_terms": ["promotion cost", "campaign cost"],
+          "description": "Cost of the promotion.",
+          "sample_policy": "aggregate_only"
+        },
+        {
+          "name": "PROMO_BEGIN_DATE",
+          "data_type": "DATE",
+          "nullable": true,
+          "semantic_type": "date",
+          "business_terms": ["promotion start date", "campaign start"],
+          "description": "Promotion start date.",
+          "sample_policy": "never"
+        },
+        {
+          "name": "PROMO_END_DATE",
+          "data_type": "DATE",
+          "nullable": true,
+          "semantic_type": "date",
+          "business_terms": ["promotion end date", "campaign end"],
+          "description": "Promotion end date.",
+          "sample_policy": "never"
+        }
+      ],
+      "relationships": []
+    },
+    {
+      "table_id": "SH.COUNTRIES",
+      "owner": "SH",
+      "name": "COUNTRIES",
+      "kind": "table",
+      "role": "dimension",
+      "description": "Country geography dimension for customer country, subregion, and region rollups.",
+      "synonyms": ["COUNTRIES", "GEOGRAPHY", "REGIONS"],
+      "curated_priority": "secondary",
+      "row_count_estimate": null,
+      "columns": [
+        {
+          "name": "COUNTRY_ID",
+          "data_type": "NUMBER",
+          "nullable": false,
+          "semantic_type": "primary_key",
+          "business_terms": ["country id"],
+          "description": "Country key.",
+          "sample_policy": "never"
+        },
+        {
+          "name": "COUNTRY_NAME",
+          "data_type": "VARCHAR2",
+          "nullable": false,
+          "semantic_type": "geography",
+          "business_terms": ["country", "country name"],
+          "description": "Country name for geographic aggregation.",
+          "sample_policy": "never"
+        },
+        {
+          "name": "COUNTRY_SUBREGION",
+          "data_type": "VARCHAR2",
+          "nullable": true,
+          "semantic_type": "geography",
+          "business_terms": ["subregion", "country subregion"],
+          "description": "Country subregion for geographic aggregation.",
+          "sample_policy": "never"
+        },
+        {
+          "name": "COUNTRY_REGION",
+          "data_type": "VARCHAR2",
+          "nullable": true,
+          "semantic_type": "geography",
+          "business_terms": ["region", "country region"],
+          "description": "Country region for geographic aggregation.",
+          "sample_policy": "never"
+        }
+      ],
+      "relationships": []
+    }
+  ]
+}

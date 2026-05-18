@@ -1,0 +1,218 @@
+{
+  "schema_version": "agent-runtime.curated-schema-seed.v1",
+  "profile_id": "oracle_adw_sh.v1",
+  "source": {
+    "author": "project",
+    "updated_at": "2026-05-17T00:00:00Z",
+    "evidence": "Oracle SH sample schema business semantics"
+  },
+  "tables": [
+    {
+      "table_id": "SH.SALES",
+      "role": "fact",
+      "priority": "primary",
+      "aliases": ["sales", "revenue", "transactions", "orders"],
+      "default_measures": ["AMOUNT_SOLD", "QUANTITY_SOLD"],
+      "default_time_columns": ["TIME_ID"],
+      "common_joins": ["SH.PRODUCTS", "SH.CUSTOMERS", "SH.CHANNELS", "SH.TIMES", "SH.PROMOTIONS"],
+      "notes": "Prefer for revenue, sales amount, units sold, trend, comparison, and aggregation questions."
+    },
+    {
+      "table_id": "SH.PRODUCTS",
+      "role": "dimension",
+      "priority": "primary",
+      "aliases": ["products", "items", "product category", "subcategory"],
+      "default_dimensions": ["PROD_CATEGORY", "PROD_SUBCATEGORY", "PROD_NAME"],
+      "common_joins": ["SH.SALES"],
+      "notes": "Use for product trend, product mix, category, subcategory, and product price context."
+    },
+    {
+      "table_id": "SH.CUSTOMERS",
+      "role": "dimension",
+      "priority": "primary",
+      "aliases": ["customers", "buyers", "demographics", "customer geography"],
+      "default_dimensions": ["CUST_GENDER", "CUST_YEAR_OF_BIRTH", "CUST_INCOME_LEVEL", "CUST_CITY", "CUST_STATE_PROVINCE"],
+      "common_joins": ["SH.SALES", "SH.COUNTRIES"],
+      "notes": "Use only aggregate customer attributes in compact context; avoid personal names and raw address-like values."
+    },
+    {
+      "table_id": "SH.CHANNELS",
+      "role": "dimension",
+      "priority": "primary",
+      "aliases": ["channels", "sales channels", "route to market"],
+      "default_dimensions": ["CHANNEL_DESC", "CHANNEL_CLASS"],
+      "common_joins": ["SH.SALES"],
+      "notes": "Use for channel mix, channel performance, and route-to-market questions."
+    },
+    {
+      "table_id": "SH.TIMES",
+      "role": "dimension",
+      "priority": "primary",
+      "aliases": ["time", "dates", "calendar", "month", "year", "quarter"],
+      "default_dimensions": ["CALENDAR_MONTH_DESC", "CALENDAR_MONTH_NUMBER", "CALENDAR_QUARTER_DESC", "CALENDAR_YEAR", "FISCAL_YEAR"],
+      "common_joins": ["SH.SALES"],
+      "notes": "Use for time-series, month, quarter, calendar year, and fiscal year questions."
+    },
+    {
+      "table_id": "SH.PROMOTIONS",
+      "role": "dimension",
+      "priority": "primary",
+      "aliases": ["promotions", "promos", "campaigns", "offers"],
+      "default_measures": ["PROMO_COST"],
+      "default_dimensions": ["PROMO_CATEGORY", "PROMO_SUBCATEGORY"],
+      "default_time_columns": ["PROMO_BEGIN_DATE", "PROMO_END_DATE"],
+      "common_joins": ["SH.SALES"],
+      "notes": "Use for promotion impact, campaign cost, and promoted sales analysis."
+    },
+    {
+      "table_id": "SH.COUNTRIES",
+      "role": "dimension",
+      "priority": "secondary",
+      "aliases": ["countries", "country", "geography", "regions", "subregions"],
+      "default_dimensions": ["COUNTRY_NAME", "COUNTRY_SUBREGION", "COUNTRY_REGION"],
+      "common_joins": ["SH.CUSTOMERS", "SH.SALES"],
+      "notes": "Use through CUSTOMERS for country, region, and subregion rollups of sales."
+    }
+  ],
+  "glossary": [
+    {
+      "term": "revenue",
+      "aliases": ["sales amount", "amount sold", "sales"],
+      "maps_to": [
+        {
+          "table_id": "SH.SALES",
+          "column": "AMOUNT_SOLD",
+          "expression": "SUM(AMOUNT_SOLD)"
+        }
+      ],
+      "ambiguity": "low"
+    },
+    {
+      "term": "units sold",
+      "aliases": ["quantity sold", "volume"],
+      "maps_to": [
+        {
+          "table_id": "SH.SALES",
+          "column": "QUANTITY_SOLD",
+          "expression": "SUM(QUANTITY_SOLD)"
+        }
+      ],
+      "ambiguity": "low"
+    },
+    {
+      "term": "average selling price",
+      "aliases": ["asp", "average sales price"],
+      "maps_to": [
+        {
+          "table_id": "SH.SALES",
+          "column": "AMOUNT_SOLD",
+          "expression": "SUM(AMOUNT_SOLD) / NULLIF(SUM(QUANTITY_SOLD), 0)"
+        }
+      ],
+      "ambiguity": "medium"
+    },
+    {
+      "term": "product category",
+      "aliases": ["category", "merchandise category"],
+      "maps_to": [
+        {
+          "table_id": "SH.PRODUCTS",
+          "column": "PROD_CATEGORY"
+        }
+      ],
+      "ambiguity": "low"
+    },
+    {
+      "term": "channel",
+      "aliases": ["sales channel", "route to market"],
+      "maps_to": [
+        {
+          "table_id": "SH.CHANNELS",
+          "column": "CHANNEL_DESC"
+        }
+      ],
+      "ambiguity": "low"
+    },
+    {
+      "term": "month",
+      "aliases": ["calendar month", "month name"],
+      "maps_to": [
+        {
+          "table_id": "SH.TIMES",
+          "column": "CALENDAR_MONTH_DESC"
+        },
+        {
+          "table_id": "SH.TIMES",
+          "column": "CALENDAR_MONTH_NUMBER"
+        }
+      ],
+      "ambiguity": "low"
+    },
+    {
+      "term": "year",
+      "aliases": ["calendar year"],
+      "maps_to": [
+        {
+          "table_id": "SH.TIMES",
+          "column": "CALENDAR_YEAR"
+        }
+      ],
+      "ambiguity": "low"
+    },
+    {
+      "term": "promotion impact",
+      "aliases": ["campaign impact", "promo lift", "promotion performance"],
+      "maps_to": [
+        {
+          "table_id": "SH.SALES",
+          "column": "PROMO_ID"
+        },
+        {
+          "table_id": "SH.PROMOTIONS",
+          "column": "PROMO_ID"
+        },
+        {
+          "table_id": "SH.PROMOTIONS",
+          "column": "PROMO_COST"
+        }
+      ],
+      "ambiguity": "medium"
+    },
+    {
+      "term": "country",
+      "aliases": ["customer country", "market country"],
+      "maps_to": [
+        {
+          "table_id": "SH.COUNTRIES",
+          "column": "COUNTRY_NAME"
+        }
+      ],
+      "ambiguity": "low"
+    },
+    {
+      "term": "region",
+      "aliases": ["country region", "market region"],
+      "maps_to": [
+        {
+          "table_id": "SH.COUNTRIES",
+          "column": "COUNTRY_REGION"
+        }
+      ],
+      "ambiguity": "low"
+    }
+  ],
+  "sample_value_allowlist": [
+    {
+      "table_id": "SH.CHANNELS",
+      "columns": ["CHANNEL_DESC", "CHANNEL_CLASS"],
+      "max_values": 20,
+      "reason": "Low-risk business category values help disambiguate channel filters."
+    },
+    {
+      "table_id": "SH.PRODUCTS",
+      "columns": ["PROD_CATEGORY", "PROD_SUBCATEGORY"],
+      "max_values": 20,
+      "reason": "Low-risk product category values help disambiguate product rollups."
+    }
+  ]
+}

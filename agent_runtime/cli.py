@@ -3,20 +3,51 @@
 from __future__ import annotations
 
 import argparse
+import getpass
+import hashlib
 import json
+import os
 from pathlib import Path
+import re
+import sys
 from typing import Sequence
 
 from . import __version__
+from .audit import RunRecord, append_audit
 from .loop import AgentLoop
 from .monitor import latest_status
+from .oracle_adw import (
+    OracleAdwConfig,
+    PROTECTED_WORKING_USER_NAMES,
+    SH_REQUIRED_TABLES,
+    SqlclReadOnlyExecutionSettings,
+    validate_read_only_sql,
+    verify_sqlcl,
+    verify_wallet_paths,
+)
 from .redaction import redact
+from .sql_execution import SqlExecutionRequest, SqlclReadOnlyAdapter
+from .sqlcl_runner import SqlclSubprocessRequest, run_sqlcl_subprocess
 from .types import Budget
 from .workflow import WorkflowEngine
 
 
 DEFAULT_RUN_DIR = Path(".agent/runs")
 DEFAULT_AUDIT_PATH = Path(".agent/audit.jsonl")
+ADW_SMOKE_SQL = "select 1 as smoke_check from dual"
+MAX_OPERATOR_SQL_BYTES = 16_384
+MAX_ADMIN_PROVISION_STDOUT_BYTES = 1_048_576
+MAX_ADMIN_PROVISION_STDERR_BYTES = 65_536
+ADMIN_PROVISION_DRIFT_ROLES = ("DBA", "PDB_DBA", "RESOURCE")
+ADMIN_PROVISION_DRIFT_SYS_PRIVILEGES = (
+    "ALTER ANY TABLE",
+    "CREATE ANY TABLE",
+    "CREATE TABLE",
+    "DELETE ANY TABLE",
+    "DROP ANY TABLE",
+    "INSERT ANY TABLE",
+    "UPDATE ANY TABLE",
+)
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -39,6 +70,64 @@ def main(argv: Sequence[str] | None = None) -> int:
     workflow_parser.add_argument("--run-dir", default=str(DEFAULT_RUN_DIR))
     workflow_parser.add_argument("--audit-log", default=str(DEFAULT_AUDIT_PATH))
 
+    operator_parser = subparsers.add_parser("operator", help="operator-only commands")
+    operator_subparsers = operator_parser.add_subparsers(
+        dest="operator_command",
+        required=True,
+    )
+    adw_smoke_parser = operator_subparsers.add_parser(
+        "adw-smoke",
+        help="run the fixed Oracle ADW read-only SQLcl smoke query",
+    )
+    adw_smoke_parser.add_argument("--audit-log", default=str(DEFAULT_AUDIT_PATH))
+    adw_smoke_parser.add_argument("--timeout-seconds", type=int, default=15)
+    adw_smoke_parser.add_argument("--max-output-bytes", type=int, default=4096)
+    adw_smoke_parser.add_argument("--max-error-bytes", type=int, default=4096)
+    adw_smoke_parser.add_argument(
+        "--confirm-live-adw-smoke",
+        action="store_true",
+        help="explicitly allow this operator-only live ADW smoke query",
+    )
+    adw_query_parser = operator_subparsers.add_parser(
+        "adw-query",
+        help="run an operator-only Oracle ADW read-only SQLcl query",
+    )
+    sql_source = adw_query_parser.add_mutually_exclusive_group(required=True)
+    sql_source.add_argument("--sql", help="single read-only SQL statement to run")
+    sql_source.add_argument("--sql-file", help="path to a UTF-8 file with one read-only SQL statement")
+    sql_source.add_argument(
+        "--sql-stdin",
+        action="store_true",
+        help="read one read-only SQL statement from stdin",
+    )
+    adw_query_parser.add_argument("--audit-log", default=str(DEFAULT_AUDIT_PATH))
+    adw_query_parser.add_argument("--timeout-seconds", type=int, default=30)
+    adw_query_parser.add_argument("--row-limit", type=int, default=100)
+    adw_query_parser.add_argument("--max-output-bytes", type=int, default=1_048_576)
+    adw_query_parser.add_argument("--max-error-bytes", type=int, default=65_536)
+    adw_query_parser.add_argument(
+        "--confirm-live-adw-query",
+        action="store_true",
+        help="explicitly allow this operator-only live ADW read-only query",
+    )
+    admin_provision_parser = operator_subparsers.add_parser(
+        "adw-provision-working-user",
+        help="operator-only ADW admin provisioning for the configured working user",
+    )
+    admin_provision_parser.add_argument("--audit-log", default=str(DEFAULT_AUDIT_PATH))
+    admin_provision_parser.add_argument("--timeout-seconds", type=int, default=60)
+    admin_provision_parser.add_argument(
+        "--grant-profile",
+        choices=("prototype-any-table-read",),
+        required=True,
+        help="explicit grant profile to apply; prototype-any-table-read grants DWROLE and SELECT ANY TABLE",
+    )
+    admin_provision_parser.add_argument(
+        "--confirm-live-adw-admin-provision",
+        action="store_true",
+        help="explicitly allow this operator-only admin provisioning action",
+    )
+
     args = parser.parse_args(argv)
 
     if args.command == "ask":
@@ -52,6 +141,33 @@ def main(argv: Sequence[str] | None = None) -> int:
         return _status(Path(args.run_dir))
     if args.command == "workflow":
         return _workflow(args.text, Path(args.run_dir), Path(args.audit_log))
+    if args.command == "operator" and args.operator_command == "adw-smoke":
+        return _operator_adw_smoke(
+            audit_path=Path(args.audit_log),
+            timeout_seconds=args.timeout_seconds,
+            max_output_bytes=args.max_output_bytes,
+            max_error_bytes=args.max_error_bytes,
+            confirm_live_adw_smoke=args.confirm_live_adw_smoke,
+        )
+    if args.command == "operator" and args.operator_command == "adw-query":
+        return _operator_adw_query(
+            sql=args.sql,
+            sql_file=args.sql_file,
+            sql_stdin=args.sql_stdin,
+            audit_path=Path(args.audit_log),
+            timeout_seconds=args.timeout_seconds,
+            row_limit=args.row_limit,
+            max_output_bytes=args.max_output_bytes,
+            max_error_bytes=args.max_error_bytes,
+            confirm_live_adw_query=args.confirm_live_adw_query,
+        )
+    if args.command == "operator" and args.operator_command == "adw-provision-working-user":
+        return _operator_adw_provision_user(
+            audit_path=Path(args.audit_log),
+            timeout_seconds=args.timeout_seconds,
+            grant_profile=args.grant_profile,
+            confirm_admin_provision=args.confirm_live_adw_admin_provision,
+        )
 
     parser.error(f"unknown command: {args.command}")
     return 2
@@ -104,3 +220,1161 @@ def _workflow(text_parts: Sequence[str], run_dir: Path, audit_path: Path) -> int
 
 def _is_supported_workflow_request(text: str) -> bool:
     return "특허" in text and "대체" in text and "등록" in text
+
+
+def _operator_adw_smoke(
+    *,
+    audit_path: Path,
+    timeout_seconds: int,
+    max_output_bytes: int,
+    max_error_bytes: int,
+    confirm_live_adw_smoke: bool,
+) -> int:
+    if not confirm_live_adw_smoke:
+        payload = _operator_live_state_payload(
+            state="confirmation_required",
+            command="operator adw-smoke",
+            requested=False,
+            attempted=False,
+            succeeded=False,
+            extra={"required_flag": "--confirm-live-adw-smoke"},
+        )
+        _append_operator_audit(audit_path, "operator.adw_smoke", payload)
+        print(json.dumps(payload, ensure_ascii=False, indent=2))
+        return 2
+
+    config = OracleAdwConfig.from_env()
+    limit_error = _validate_operator_adw_limits(
+        timeout_seconds=timeout_seconds,
+        row_limit=1,
+        max_output_bytes=max_output_bytes,
+        max_error_bytes=max_error_bytes,
+    )
+    if limit_error is not None:
+        payload = _operator_live_state_payload(
+            state="rejected",
+            command="operator adw-smoke",
+            requested=True,
+            attempted=False,
+            succeeded=False,
+            extra={"error": limit_error, "config": config.redacted_status()},
+        )
+        _append_operator_audit(audit_path, "operator.adw_smoke", payload)
+        print(json.dumps(redact(payload), ensure_ascii=False, indent=2))
+        return 1
+
+    config_error = _validate_operator_adw_config(config)
+    if config_error is not None:
+        payload = _operator_live_state_payload(
+            state="rejected",
+            command="operator adw-smoke",
+            requested=True,
+            attempted=False,
+            succeeded=False,
+            extra={"error": config_error, "config": config.redacted_status()},
+        )
+        _append_operator_audit(audit_path, "operator.adw_smoke", payload)
+        print(json.dumps(redact(payload), ensure_ascii=False, indent=2))
+        return 1
+
+    sqlcl_status = verify_sqlcl(config)
+    if not sqlcl_status.ok:
+        payload = _operator_live_state_payload(
+            state="rejected",
+            command="operator adw-smoke",
+            requested=True,
+            attempted=False,
+            succeeded=False,
+            extra={
+                "error": {
+                    "code": "sqlcl_verification_failed",
+                    "message": "SQLcl verification failed before live ADW smoke.",
+                    "status": sqlcl_status.to_redacted_dict(),
+                },
+                "config": config.redacted_status(),
+            },
+        )
+        _append_operator_audit(audit_path, "operator.adw_smoke", payload)
+        print(json.dumps(redact(payload), ensure_ascii=False, indent=2))
+        return 1
+
+    settings = SqlclReadOnlyExecutionSettings(
+        timeout_seconds=timeout_seconds,
+        row_limit=1,
+        max_output_bytes=max_output_bytes,
+        max_error_bytes=max_error_bytes,
+    )
+    adapter = SqlclReadOnlyAdapter(
+        config,
+        settings=settings,
+        allow_real_execution=True,
+    )
+    response = adapter.execute(
+        SqlExecutionRequest(
+            sql=ADW_SMOKE_SQL,
+            purpose="operator_live_adw_smoke",
+            metadata={"operator_command": "adw-smoke"},
+        )
+    )
+    response_dict = response.to_redacted_dict()
+    live_execution_attempted = (
+        response.backend_metadata.get("execution_state") == "executed"
+    )
+    payload = _operator_live_state_payload(
+        state="succeeded" if response.ok else response.status,
+        command="operator adw-smoke",
+        requested=True,
+        attempted=live_execution_attempted,
+        succeeded=response.ok,
+        extra={
+            "smoke_sql_sha256": response.backend_metadata.get("sql_sha256"),
+            "response": response_dict,
+        },
+    )
+    _append_operator_audit(audit_path, "operator.adw_smoke", payload)
+    print(json.dumps(redact(payload), ensure_ascii=False, indent=2))
+    return 0 if response.ok else 1
+
+
+def _operator_adw_query(
+    *,
+    sql: str | None,
+    sql_file: str | None,
+    sql_stdin: bool,
+    audit_path: Path,
+    timeout_seconds: int,
+    row_limit: int,
+    max_output_bytes: int,
+    max_error_bytes: int,
+    confirm_live_adw_query: bool,
+) -> int:
+    if not confirm_live_adw_query:
+        payload = _operator_live_state_payload(
+            state="confirmation_required",
+            command="operator adw-query",
+            requested=False,
+            attempted=False,
+            succeeded=False,
+            extra={"required_flag": "--confirm-live-adw-query"},
+        )
+        _append_operator_audit(audit_path, "operator.adw_query", payload)
+        print(json.dumps(payload, ensure_ascii=False, indent=2))
+        return 2
+
+    sql_text, sql_source_kind, sql_error = _load_operator_sql(
+        sql=sql,
+        sql_file=sql_file,
+        sql_stdin=sql_stdin,
+    )
+    config = OracleAdwConfig.from_env()
+    if sql_error is not None:
+        payload = _operator_live_state_payload(
+            state="rejected",
+            command="operator adw-query",
+            requested=True,
+            attempted=False,
+            succeeded=False,
+            extra={"error": sql_error, "config": config.redacted_status()},
+        )
+        _append_operator_audit(audit_path, "operator.adw_query", payload)
+        print(json.dumps(redact(payload), ensure_ascii=False, indent=2))
+        return 1
+    assert sql_text is not None
+    assert sql_source_kind is not None
+
+    sql_sha256 = hashlib.sha256(sql_text.strip().encode("utf-8")).hexdigest()
+    policy = validate_read_only_sql(sql_text)
+    if not policy.allowed:
+        payload = _operator_live_state_payload(
+            state="rejected",
+            command="operator adw-query",
+            requested=True,
+            attempted=False,
+            succeeded=False,
+            extra={
+                "sql_sha256": sql_sha256,
+                "sql_source": sql_source_kind,
+                "policy": {
+                    "allowed": policy.allowed,
+                    "code": policy.code,
+                    "reason": policy.reason,
+                },
+                "config": config.redacted_status(),
+            },
+        )
+        _append_operator_audit(audit_path, "operator.adw_query", payload)
+        print(json.dumps(redact(payload), ensure_ascii=False, indent=2))
+        return 1
+
+    limit_error = _validate_operator_adw_limits(
+        timeout_seconds=timeout_seconds,
+        row_limit=row_limit,
+        max_output_bytes=max_output_bytes,
+        max_error_bytes=max_error_bytes,
+    )
+    if limit_error is not None:
+        payload = _operator_live_state_payload(
+            state="rejected",
+            command="operator adw-query",
+            requested=True,
+            attempted=False,
+            succeeded=False,
+            extra={
+                "sql_sha256": sql_sha256,
+                "sql_source": sql_source_kind,
+                "error": limit_error,
+                "config": config.redacted_status(),
+            },
+        )
+        _append_operator_audit(audit_path, "operator.adw_query", payload)
+        print(json.dumps(redact(payload), ensure_ascii=False, indent=2))
+        return 1
+
+    config_error = _validate_operator_adw_config(config)
+    if config_error is not None:
+        payload = _operator_live_state_payload(
+            state="rejected",
+            command="operator adw-query",
+            requested=True,
+            attempted=False,
+            succeeded=False,
+            extra={
+                "sql_sha256": sql_sha256,
+                "sql_source": sql_source_kind,
+                "error": config_error,
+                "config": config.redacted_status(),
+            },
+        )
+        _append_operator_audit(audit_path, "operator.adw_query", payload)
+        print(json.dumps(redact(payload), ensure_ascii=False, indent=2))
+        return 1
+
+    sqlcl_status = verify_sqlcl(config)
+    if not sqlcl_status.ok:
+        payload = _operator_live_state_payload(
+            state="rejected",
+            command="operator adw-query",
+            requested=True,
+            attempted=False,
+            succeeded=False,
+            extra={
+                "sql_sha256": sql_sha256,
+                "sql_source": sql_source_kind,
+                "error": {
+                    "code": "sqlcl_verification_failed",
+                    "message": "SQLcl verification failed before live ADW query.",
+                    "status": sqlcl_status.to_redacted_dict(),
+                },
+                "config": config.redacted_status(),
+            },
+        )
+        _append_operator_audit(audit_path, "operator.adw_query", payload)
+        print(json.dumps(redact(payload), ensure_ascii=False, indent=2))
+        return 1
+
+    settings = SqlclReadOnlyExecutionSettings(
+        timeout_seconds=timeout_seconds,
+        row_limit=row_limit,
+        max_output_bytes=max_output_bytes,
+        max_error_bytes=max_error_bytes,
+    )
+    adapter = SqlclReadOnlyAdapter(
+        config,
+        settings=settings,
+        allow_real_execution=True,
+    )
+    response = adapter.execute(
+        SqlExecutionRequest(
+            sql=sql_text,
+            purpose="operator_live_adw_read_only_query",
+            metadata={
+                "operator_command": "adw-query",
+                "sql_source": sql_source_kind,
+            },
+        )
+    )
+    response_dict = response.to_redacted_dict()
+    live_execution_attempted = (
+        response.backend_metadata.get("execution_state") == "executed"
+    )
+    payload = _operator_live_state_payload(
+        state="succeeded" if response.ok else response.status,
+        command="operator adw-query",
+        requested=True,
+        attempted=live_execution_attempted,
+        succeeded=response.ok,
+        extra={
+            "sql_sha256": response.backend_metadata.get("sql_sha256", sql_sha256),
+            "sql_source": sql_source_kind,
+            "response": response_dict,
+        },
+    )
+    _append_operator_audit(
+        audit_path,
+        "operator.adw_query",
+        _operator_query_audit_payload(payload),
+    )
+    print(json.dumps(redact(payload), ensure_ascii=False, indent=2))
+    return 0 if response.ok else 1
+
+
+def _operator_adw_provision_user(
+    *,
+    audit_path: Path,
+    timeout_seconds: int,
+    grant_profile: str,
+    confirm_admin_provision: bool,
+) -> int:
+    command = "operator adw-provision-working-user"
+    requested_privileges = _admin_requested_privileges(grant_profile=grant_profile)
+    if not confirm_admin_provision:
+        payload = {
+            "state": "confirmation_required",
+            "command": command,
+            "required_flag": "--confirm-live-adw-admin-provision",
+            "admin_execution_requested": False,
+            "admin_execution_attempted": False,
+            "admin_execution_succeeded": False,
+            "grant_profile": grant_profile,
+            "requested_privileges": requested_privileges,
+        }
+        _append_operator_audit(audit_path, "operator.adw_provision_working_user", payload)
+        print(json.dumps(payload, ensure_ascii=False, indent=2))
+        return 2
+
+    config = OracleAdwConfig.from_env()
+    validation_error = _validate_operator_admin_provision_config(
+        config,
+        timeout_seconds=timeout_seconds,
+    )
+    if validation_error is not None:
+        payload = {
+            "state": "rejected",
+            "command": command,
+            "admin_execution_requested": True,
+            "admin_execution_attempted": False,
+            "admin_execution_succeeded": False,
+            "grant_profile": grant_profile,
+            "requested_privileges": requested_privileges,
+            "error": validation_error,
+            "config": config.redacted_status(),
+        }
+        _append_operator_audit(audit_path, "operator.adw_provision_working_user", payload)
+        print(json.dumps(redact(payload), ensure_ascii=False, indent=2))
+        return 1
+
+    sqlcl_status = verify_sqlcl(config)
+    if not sqlcl_status.ok:
+        payload = {
+            "state": "rejected",
+            "command": command,
+            "admin_execution_requested": True,
+            "admin_execution_attempted": False,
+            "admin_execution_succeeded": False,
+            "grant_profile": grant_profile,
+            "requested_privileges": requested_privileges,
+            "error": {
+                "code": "sqlcl_verification_failed",
+                "message": "SQLcl verification failed before admin provisioning.",
+                "status": sqlcl_status.to_redacted_dict(),
+            },
+            "config": config.redacted_status(),
+        }
+        _append_operator_audit(audit_path, "operator.adw_provision_working_user", payload)
+        print(json.dumps(redact(payload), ensure_ascii=False, indent=2))
+        return 1
+
+    completed = _run_admin_provision_sqlcl(
+        config,
+        timeout_seconds=timeout_seconds,
+        grant_profile=grant_profile,
+    )
+    succeeded = completed["status"] == "completed"
+    classification = _classify_admin_provisioning_result(
+        config=config,
+        grant_profile=grant_profile,
+        completed=completed,
+    )
+    state = "succeeded" if succeeded else "failed"
+    if classification["classification"] == "rejected_drift":
+        state = "rejected"
+    actions_applied = completed.get("actions_applied", [])
+    admin_apply_attempted = bool(actions_applied)
+    payload = {
+        "state": state,
+        "command": command,
+        "admin_execution_requested": True,
+        "admin_execution_attempted": admin_apply_attempted,
+        "admin_execution_succeeded": succeeded,
+        "admin_metadata_inspection_attempted": True,
+        "admin_apply_attempted": admin_apply_attempted,
+        "working_user": _safe_oracle_identifier(config.db_user or ""),
+        "grant_profile": grant_profile,
+        "requested_privileges": requested_privileges,
+        "provisioning_classification": classification["classification"],
+        "provisioning_outcome": classification["classification"],
+        "provisioning_state": classification["state"],
+        "actions_applied": actions_applied,
+        "runner_status": completed["status"],
+        "returncode": completed["returncode"],
+        "stdout_bytes": completed["stdout_bytes"],
+        "stderr_bytes": completed["stderr_bytes"],
+        "stdout": completed["stdout"],
+        "stderr": completed["stderr"],
+    }
+    _append_operator_audit(
+        audit_path,
+        "operator.adw_provision_working_user",
+        {
+            **payload,
+            "stdout": "[REDACTED_SQLCL_OUTPUT]",
+            "stderr": "[REDACTED_SQLCL_OUTPUT]",
+        },
+    )
+    print(json.dumps(redact(payload), ensure_ascii=False, indent=2))
+    return 0 if succeeded else 1
+
+
+def _validate_operator_adw_config(
+    config: OracleAdwConfig,
+) -> dict[str, object] | None:
+    if not config.sqlcl_path:
+        return {
+            "code": "sqlcl_path_required",
+            "message": "SQLCL_PATH is required for operator ADW execution.",
+        }
+    sqlcl_path = Path(config.sqlcl_path).expanduser()
+    if not sqlcl_path.is_absolute():
+        return {
+            "code": "sqlcl_path_must_be_absolute",
+            "message": "SQLCL_PATH must be an absolute path for live ADW execution.",
+        }
+    if not config.db_user:
+        return {
+            "code": "db_user_required",
+            "message": "DB_USER is required for operator ADW execution.",
+        }
+    if not config.db_user_pass:
+        return {
+            "code": "db_user_pass_required",
+            "message": "DB_USER_PASS is required for operator ADW execution.",
+        }
+    if not config.db_dsn:
+        return {
+            "code": "db_dsn_required",
+            "message": "DB_DSN is required for operator ADW execution.",
+        }
+    if not _is_tns_alias(config.db_dsn):
+        return {
+            "code": "db_dsn_must_be_tns_alias",
+            "message": "Operator ADW execution requires DB_DSN to be a wallet TNS alias.",
+        }
+    if not config.db_wallet_path:
+        return {
+            "code": "db_wallet_path_required",
+            "message": "DB_WALLET_PATH is required for operator ADW execution.",
+        }
+    wallet_status = verify_wallet_paths(config)
+    if not wallet_status.wallet_path_is_dir:
+        return {
+            "code": "db_wallet_path_invalid",
+            "message": "DB_WALLET_PATH must point to an existing wallet directory.",
+            "wallet": wallet_status.to_redacted_dict(),
+        }
+    return None
+
+
+def _validate_operator_admin_provision_config(
+    config: OracleAdwConfig,
+    *,
+    timeout_seconds: int,
+) -> dict[str, object] | None:
+    if not 1 <= timeout_seconds <= 300:
+        return {
+            "code": "invalid_timeout_seconds",
+            "message": "timeout_seconds must be between 1 and 300.",
+        }
+    if not config.sqlcl_path:
+        return {
+            "code": "sqlcl_path_required",
+            "message": "SQLCL_PATH is required for operator ADW admin provisioning.",
+        }
+    if not Path(config.sqlcl_path).expanduser().is_absolute():
+        return {
+            "code": "sqlcl_path_must_be_absolute",
+            "message": "SQLCL_PATH must be an absolute path for admin provisioning.",
+        }
+    if not config.admin_user:
+        return {
+            "code": "admin_user_required",
+            "message": "ADMIN_USER is required for admin provisioning.",
+        }
+    if not config.admin_user_pass:
+        return {
+            "code": "admin_user_pass_required",
+            "message": "ADMIN_USER_PASS is required for admin provisioning.",
+        }
+    if any(char in config.admin_user_pass for char in "\r\n\x00"):
+        return {
+            "code": "invalid_admin_user_pass",
+            "message": "ADMIN_USER_PASS contains disallowed control characters.",
+        }
+    if not config.db_user:
+        return {
+            "code": "db_user_required",
+            "message": "DB_USER is required for admin provisioning.",
+        }
+    try:
+        _safe_working_user(config.db_user)
+    except ValueError as exc:
+        return {"code": "invalid_db_user", "message": str(exc)}
+    if not config.db_user_pass:
+        return {
+            "code": "db_user_pass_required",
+            "message": "DB_USER_PASS is required for admin provisioning.",
+        }
+    if any(char in config.db_user_pass for char in "\r\n\x00'"):
+        return {
+            "code": "invalid_db_user_pass",
+            "message": "DB_USER_PASS contains characters that cannot be safely rendered in the current admin provisioning boundary.",
+        }
+    if not config.db_dsn:
+        return {
+            "code": "db_dsn_required",
+            "message": "DB_DSN is required for admin provisioning.",
+        }
+    if not _is_tns_alias(config.db_dsn):
+        return {
+            "code": "db_dsn_must_be_tns_alias",
+            "message": "Admin provisioning requires DB_DSN to be a wallet TNS alias.",
+        }
+    if not config.db_wallet_path:
+        return {
+            "code": "db_wallet_path_required",
+            "message": "DB_WALLET_PATH is required for admin provisioning.",
+        }
+    wallet_status = verify_wallet_paths(config)
+    if not wallet_status.wallet_path_is_dir:
+        return {
+            "code": "db_wallet_path_invalid",
+            "message": "DB_WALLET_PATH must point to an existing wallet directory.",
+            "wallet": wallet_status.to_redacted_dict(),
+        }
+    return None
+
+
+def _validate_operator_adw_limits(
+    *,
+    timeout_seconds: int,
+    row_limit: int,
+    max_output_bytes: int,
+    max_error_bytes: int,
+) -> dict[str, object] | None:
+    if not 1 <= timeout_seconds <= 300:
+        return {
+            "code": "invalid_timeout_seconds",
+            "message": "timeout_seconds must be between 1 and 300.",
+        }
+    if not 1 <= row_limit <= 10_000:
+        return {
+            "code": "invalid_row_limit",
+            "message": "row_limit must be between 1 and 10000.",
+        }
+    if not 1_024 <= max_output_bytes <= 10_485_760:
+        return {
+            "code": "invalid_max_output_bytes",
+            "message": "max_output_bytes must be between 1024 and 10485760.",
+        }
+    if not 1_024 <= max_error_bytes <= 1_048_576:
+        return {
+            "code": "invalid_max_error_bytes",
+            "message": "max_error_bytes must be between 1024 and 1048576.",
+        }
+    return None
+
+
+def _load_operator_sql(
+    *,
+    sql: str | None,
+    sql_file: str | None,
+    sql_stdin: bool,
+) -> tuple[str | None, str | None, dict[str, object] | None]:
+    if sql is not None:
+        sql_text, error = _validate_operator_sql_text(sql)
+        return sql_text, "inline", error
+    if sql_file is not None:
+        path = Path(sql_file).expanduser()
+        try:
+            sql_text = path.read_text(encoding="utf-8")
+        except OSError as exc:
+            return None, "file", {
+                "code": "sql_file_unreadable",
+                "message": f"SQL file could not be read: {exc.__class__.__name__}.",
+            }
+        sql_text, error = _validate_operator_sql_text(sql_text)
+        return sql_text, "file", error
+    if sql_stdin:
+        sql_text = sys.stdin.read()
+        sql_text, error = _validate_operator_sql_text(sql_text)
+        return sql_text, "stdin", error
+    return None, None, {
+        "code": "sql_required",
+        "message": "Either --sql, --sql-file, or --sql-stdin is required.",
+    }
+
+
+def _validate_operator_sql_text(sql_text: str) -> tuple[str | None, dict[str, object] | None]:
+    byte_length = len(sql_text.encode("utf-8"))
+    if byte_length > MAX_OPERATOR_SQL_BYTES:
+        return None, {
+            "code": "sql_too_large",
+            "message": f"SQL text must be at most {MAX_OPERATOR_SQL_BYTES} bytes.",
+            "sql_bytes": byte_length,
+        }
+    normalized_sql = sql_text.strip()
+    if not normalized_sql:
+        return None, {
+            "code": "empty_sql",
+            "message": "SQL text is empty.",
+        }
+    return normalized_sql, None
+
+
+def _run_admin_provision_sqlcl(
+    config: OracleAdwConfig,
+    *,
+    timeout_seconds: int,
+    grant_profile: str,
+) -> dict[str, object]:
+    assert config.sqlcl_path is not None
+    assert config.admin_user is not None
+    assert config.admin_user_pass is not None
+    assert config.db_user is not None
+    assert config.db_user_pass is not None
+    assert config.db_dsn is not None
+    working_user = _safe_working_user(config.db_user)
+    admin_user = _safe_oracle_identifier(config.admin_user)
+    escaped_password = config.db_user_pass.replace('"', '""')
+    required_synonyms = sorted(SH_REQUIRED_TABLES) if grant_profile == "prototype-any-table-read" else []
+    pre_result = _run_admin_sqlcl_statements(
+        config,
+        timeout_seconds=timeout_seconds,
+        admin_user=admin_user,
+        statements=_admin_inspection_statements(
+            working_user=working_user,
+            grant_profile=grant_profile,
+            prefix="pre",
+        ),
+    )
+    pre_classification = _classify_admin_provisioning_result(
+        config=config,
+        grant_profile=grant_profile,
+        completed=pre_result,
+    )
+    if pre_result["status"] != "completed":
+        return {**pre_result, "phase": "precheck"}
+    if pre_classification["classification"] == "rejected_drift":
+        return {
+            **pre_result,
+            "status": "rejected_drift",
+            "phase": "precheck",
+            "precheck_classification": pre_classification,
+            "actions_applied": [],
+        }
+    if pre_classification["classification"] == "already_compliant":
+        return {
+            **pre_result,
+            "phase": "precheck",
+            "precheck_classification": pre_classification,
+            "actions_applied": [],
+        }
+
+    pre_state = pre_classification["state"]["pre"]
+    assert isinstance(pre_state, dict)
+    missing_roles = tuple(str(value) for value in pre_state.get("missing_roles", ()))
+    missing_sys_privileges = tuple(str(value) for value in pre_state.get("missing_system_privileges", ()))
+    missing_synonyms = tuple(str(value) for value in pre_state.get("missing_synonyms", ()))
+    user_exists = bool(pre_state.get("exists"))
+    account_status = pre_state.get("account_status")
+    statements: list[str] = []
+    actions_applied: list[str] = []
+    if not user_exists:
+        statements.append(f'CREATE USER {working_user} IDENTIFIED BY "{escaped_password}";')
+        actions_applied.append("create_user")
+    elif account_status != "OPEN":
+        statements.append(f"ALTER USER {working_user} ACCOUNT UNLOCK;")
+        actions_applied.append("unlock_user")
+    for privilege in missing_sys_privileges:
+        statements.append(f"GRANT {privilege} TO {working_user};")
+        actions_applied.append(f"grant_system_privilege:{privilege}")
+    for role in missing_roles:
+        statements.append(f"GRANT {role} TO {working_user};")
+        actions_applied.append(f"grant_role:{role}")
+    if "DWROLE" in missing_roles:
+        statements.append(f"ALTER USER {working_user} DEFAULT ROLE ALL;")
+        actions_applied.append("default_role_all")
+    for table_name in sorted(set(required_synonyms) & set(missing_synonyms)):
+        statements.append(f"CREATE OR REPLACE SYNONYM {working_user}.{table_name} FOR SH.{table_name};")
+        actions_applied.append(f"create_synonym:{table_name}")
+    if not statements:
+        return {
+            **pre_result,
+            "phase": "precheck",
+            "precheck_classification": pre_classification,
+            "actions_applied": [],
+        }
+    apply_result = _run_admin_sqlcl_statements(
+        config,
+        timeout_seconds=timeout_seconds,
+        admin_user=admin_user,
+        statements=statements,
+    )
+    if apply_result["status"] != "completed":
+        return {
+            **apply_result,
+            "phase": "apply",
+            "precheck_classification": pre_classification,
+            "actions_applied": actions_applied,
+        }
+    post_result = _run_admin_sqlcl_statements(
+        config,
+        timeout_seconds=timeout_seconds,
+        admin_user=admin_user,
+        statements=_admin_inspection_statements(
+            working_user=working_user,
+            grant_profile=grant_profile,
+            prefix="post",
+        ),
+    )
+    return {
+        **post_result,
+        "stdout": "\n".join((str(pre_result["stdout"]), str(apply_result["stdout"]), str(post_result["stdout"]))),
+        "stderr": "\n".join((str(pre_result["stderr"]), str(apply_result["stderr"]), str(post_result["stderr"]))),
+        "stdout_bytes": int(pre_result["stdout_bytes"]) + int(apply_result["stdout_bytes"]) + int(post_result["stdout_bytes"]),
+        "stderr_bytes": int(pre_result["stderr_bytes"]) + int(apply_result["stderr_bytes"]) + int(post_result["stderr_bytes"]),
+        "phase": "postcheck",
+        "precheck_classification": pre_classification,
+        "actions_applied": actions_applied,
+    }
+
+
+def _run_admin_sqlcl_statements(
+    config: OracleAdwConfig,
+    *,
+    timeout_seconds: int,
+    admin_user: str,
+    statements: list[str],
+) -> dict[str, object]:
+    stdin = "\n".join(
+        (
+            "set echo off",
+            "set define off",
+            "set sqlformat json",
+            "set feedback off",
+            "set heading on",
+            "whenever sqlerror exit sql.sqlcode",
+            "whenever oserror exit failure",
+            f"connect {admin_user}/\"{config.admin_user_pass.replace(chr(34), chr(34) + chr(34))}\"@{config.db_dsn}",
+            *statements,
+            "exit",
+            "",
+        )
+    )
+    env = _minimal_operator_sqlcl_env()
+    if config.db_wallet_path:
+        env["TNS_ADMIN"] = str(Path(config.db_wallet_path).expanduser())
+    result = run_sqlcl_subprocess(
+        SqlclSubprocessRequest(
+            command=[str(Path(config.sqlcl_path).expanduser()), "-S", "-L", "-nolog"],
+            stdin=stdin,
+            env=env,
+            timeout_seconds=timeout_seconds,
+            max_output_bytes=MAX_ADMIN_PROVISION_STDOUT_BYTES,
+            max_error_bytes=MAX_ADMIN_PROVISION_STDERR_BYTES,
+            sensitive_values=tuple(
+                value
+                for value in (
+                    stdin,
+                    config.admin_user_pass,
+                    config.db_user_pass,
+                    config.db_dsn,
+                    config.db_wallet_pass,
+                )
+                if value
+            ),
+        )
+    )
+    return {
+        "status": result.status,
+        "returncode": result.returncode,
+        "stdout": _redact_admin_sqlcl_output(config, result.stdout, stdin),
+        "stderr": _redact_admin_sqlcl_output(config, result.stderr, stdin),
+        "timed_out": result.timed_out,
+        "stdout_too_large": result.stdout_too_large,
+        "stderr_too_large": result.stderr_too_large,
+        "stdout_bytes": result.stdout_bytes,
+        "stderr_bytes": result.stderr_bytes,
+    }
+
+
+def _admin_inspection_statements(
+    *,
+    working_user: str,
+    grant_profile: str,
+    prefix: str,
+) -> list[str]:
+    required_roles, required_sys_privileges = _admin_required_grants(grant_profile=grant_profile)
+    required_synonyms = sorted(SH_REQUIRED_TABLES) if grant_profile == "prototype-any-table-read" else []
+    role_sql_list = _sql_string_list((*required_roles, *ADMIN_PROVISION_DRIFT_ROLES))
+    sys_privilege_sql_list = _sql_string_list(
+        (*required_sys_privileges, *ADMIN_PROVISION_DRIFT_SYS_PRIVILEGES)
+    )
+    synonym_sql_list = _sql_string_list(required_synonyms)
+    return [
+        (
+            f"select '{prefix}_user' as afs_section, username, account_status from dba_users "
+            f"where username = '{working_user}';"
+        ),
+        (
+            f"select '{prefix}_role' as afs_section, granted_role from dba_role_privs "
+            f"where grantee = '{working_user}' and granted_role in ({role_sql_list}) "
+            "order by granted_role;"
+        ),
+        (
+            f"select '{prefix}_sys_privilege' as afs_section, privilege from dba_sys_privs "
+            f"where grantee = '{working_user}' and privilege in ({sys_privilege_sql_list}) "
+            "order by privilege;"
+        ),
+        (
+            f"select '{prefix}_synonym' as afs_section, synonym_name, table_owner, table_name "
+            f"from dba_synonyms where owner = '{working_user}' "
+            f"and synonym_name in ({synonym_sql_list}) order by synonym_name;"
+        ),
+    ]
+
+
+def _classify_admin_provisioning_result(
+    *,
+    config: OracleAdwConfig,
+    grant_profile: str,
+    completed: dict[str, object],
+) -> dict[str, object]:
+    embedded = completed.get("precheck_classification")
+    if (
+        isinstance(embedded, dict)
+        and completed.get("phase") == "precheck"
+        and completed.get("status") in {"completed", "rejected_drift"}
+    ):
+        return embedded
+    stdout = str(completed.get("stdout", ""))
+    stderr = str(completed.get("stderr", ""))
+    if "AFS_REJECTED_DRIFT" in stdout or "AFS_REJECTED_DRIFT" in stderr:
+        return {
+            "classification": "rejected_drift",
+            "state": {
+                "reason": "existing_user_has_privileges_outside_selected_profile",
+                "drift_policy": {
+                    "roles": list(ADMIN_PROVISION_DRIFT_ROLES),
+                    "system_privileges": list(ADMIN_PROVISION_DRIFT_SYS_PRIVILEGES),
+                },
+            },
+        }
+
+    required_roles, required_sys_privileges = _admin_required_grants(grant_profile=grant_profile)
+    required_synonyms = set(SH_REQUIRED_TABLES) if grant_profile == "prototype-any-table-read" else set()
+    sections = _admin_provisioning_sections(stdout)
+    pre_state = _admin_account_state(
+        sections=sections,
+        prefix="pre",
+        required_roles=required_roles,
+        required_sys_privileges=required_sys_privileges,
+        required_synonyms=required_synonyms,
+    )
+    post_state = _admin_account_state(
+        sections=sections,
+        prefix="post",
+        required_roles=required_roles,
+        required_sys_privileges=required_sys_privileges,
+        required_synonyms=required_synonyms,
+    )
+    active_prefix = "post" if post_state["observed"] else "pre"
+    active_state = post_state if active_prefix == "post" else pre_state
+    classification_state = {
+        "pre": pre_state,
+        "post": post_state,
+        "active_prefix": active_prefix,
+        "required": {
+            "roles": list(required_roles),
+            "system_privileges": list(required_sys_privileges),
+            "synonyms": sorted(required_synonyms),
+        },
+    }
+
+    if completed.get("status") != "completed":
+        return {
+            "classification": "failed",
+            "state": classification_state,
+        }
+    if active_state["drift_reasons"]:
+        return {
+            "classification": "rejected_drift",
+            "state": classification_state,
+        }
+    if active_prefix == "post" and not post_state["compliant"]:
+        return {
+            "classification": "failed_incomplete",
+            "state": classification_state,
+        }
+    if active_prefix == "post" and not pre_state["exists"]:
+        return {
+            "classification": "created",
+            "state": classification_state,
+        }
+    if active_prefix == "post" and not pre_state["compliant"]:
+        return {
+            "classification": "granted_missing_privileges",
+            "state": classification_state,
+        }
+    if active_state["compliant"]:
+        return {
+            "classification": "already_compliant",
+            "state": classification_state,
+        }
+    return {
+        "classification": "granted_missing_privileges",
+        "state": classification_state,
+    }
+
+
+def _admin_provisioning_sections(stdout: str) -> dict[str, list[dict[str, str]]]:
+    sections: dict[str, list[dict[str, str]]] = {}
+    for item in _extract_sqlcl_json_items(stdout):
+        section = item.get("afs_section")
+        if not section:
+            continue
+        sections.setdefault(section, []).append(item)
+    return sections
+
+
+def _extract_sqlcl_json_items(text: str) -> list[dict[str, str]]:
+    decoder = json.JSONDecoder()
+    index = 0
+    items: list[dict[str, str]] = []
+    while index < len(text):
+        start = text.find("{", index)
+        if start == -1:
+            break
+        try:
+            value, end = decoder.raw_decode(text[start:])
+        except json.JSONDecodeError:
+            index = start + 1
+            continue
+        items.extend(_items_from_sqlcl_json(value))
+        index = start + end
+    return items
+
+
+def _items_from_sqlcl_json(value: object) -> list[dict[str, str]]:
+    raw_items: list[object] = []
+    if isinstance(value, dict):
+        if isinstance(value.get("items"), list):
+            raw_items.extend(value["items"])
+        results = value.get("results")
+        if isinstance(results, list):
+            for result in results:
+                if isinstance(result, dict) and isinstance(result.get("items"), list):
+                    raw_items.extend(result["items"])
+    normalized: list[dict[str, str]] = []
+    for item in raw_items:
+        if not isinstance(item, dict):
+            continue
+        row = {str(key).lower(): str(val).upper() for key, val in item.items() if val is not None}
+        if "afs_section" in row:
+            row["afs_section"] = row["afs_section"].lower()
+        normalized.append(row)
+    return normalized
+
+
+def _admin_account_state(
+    *,
+    sections: dict[str, list[dict[str, str]]],
+    prefix: str,
+    required_roles: tuple[str, ...],
+    required_sys_privileges: tuple[str, ...],
+    required_synonyms: set[str],
+) -> dict[str, object]:
+    user_rows = sections.get(f"{prefix}_user", [])
+    role_rows = sections.get(f"{prefix}_role", [])
+    sys_privilege_rows = sections.get(f"{prefix}_sys_privilege", [])
+    synonym_rows = sections.get(f"{prefix}_synonym", [])
+    account_status = user_rows[0].get("account_status") if user_rows else None
+    roles = {row.get("granted_role", "") for row in role_rows}
+    sys_privileges = {row.get("privilege", "") for row in sys_privilege_rows}
+    valid_synonyms = set()
+    drift_reasons = []
+    for row in synonym_rows:
+        synonym_name = row.get("synonym_name", "")
+        table_owner = row.get("table_owner", "")
+        table_name = row.get("table_name", "")
+        if synonym_name in required_synonyms and table_owner == "SH" and table_name == synonym_name:
+            valid_synonyms.add(synonym_name)
+        elif synonym_name in required_synonyms:
+            drift_reasons.append(f"unexpected_synonym_target:{synonym_name}")
+    drift_roles = sorted(roles & set(ADMIN_PROVISION_DRIFT_ROLES))
+    drift_sys_privileges = sorted(sys_privileges & set(ADMIN_PROVISION_DRIFT_SYS_PRIVILEGES))
+    drift_reasons.extend(f"unexpected_role:{role}" for role in drift_roles)
+    drift_reasons.extend(f"unexpected_system_privilege:{privilege}" for privilege in drift_sys_privileges)
+    missing_roles = sorted(set(required_roles) - roles)
+    missing_sys_privileges = sorted(set(required_sys_privileges) - sys_privileges)
+    missing_synonyms = sorted(required_synonyms - valid_synonyms)
+    exists = bool(user_rows)
+    compliant = (
+        exists
+        and account_status == "OPEN"
+        and not missing_roles
+        and not missing_sys_privileges
+        and not missing_synonyms
+    )
+    return {
+        "observed": bool(user_rows or role_rows or sys_privilege_rows or synonym_rows),
+        "exists": exists,
+        "account_status": account_status,
+        "roles": sorted(roles),
+        "system_privileges": sorted(sys_privileges),
+        "synonyms": sorted(valid_synonyms),
+        "missing_roles": missing_roles,
+        "missing_system_privileges": missing_sys_privileges,
+        "missing_synonyms": missing_synonyms,
+        "drift_reasons": drift_reasons,
+        "compliant": compliant,
+    }
+
+
+def _operator_query_audit_payload(payload: dict[str, object]) -> dict[str, object]:
+    audit_payload = dict(payload)
+    response = audit_payload.get("response")
+    if isinstance(response, dict):
+        audit_response = dict(response)
+        audit_response.pop("rows", None)
+        audit_response["rows_omitted_from_audit"] = True
+        audit_payload["response"] = audit_response
+    return audit_payload
+
+
+def _operator_live_state_payload(
+    *,
+    state: str,
+    command: str,
+    requested: bool,
+    attempted: bool,
+    succeeded: bool,
+    extra: dict[str, object] | None = None,
+) -> dict[str, object]:
+    return {
+        "state": state,
+        "command": command,
+        "live_database_execution": attempted,
+        "live_execution_requested": requested,
+        "live_execution_attempted": attempted,
+        "live_execution_succeeded": succeeded,
+        **(extra or {}),
+    }
+
+
+def _append_operator_audit(
+    audit_path: Path,
+    event: str,
+    payload: dict[str, object],
+) -> None:
+    append_audit(
+        RunRecord.create(
+            event,
+            {
+                "operator_only": True,
+                "operator_context": _operator_context(),
+                **payload,
+            },
+        ),
+        audit_path,
+    )
+
+
+def _is_tns_alias(value: str) -> bool:
+    return bool(re.fullmatch(r"[A-Za-z][A-Za-z0-9_.-]{0,127}", value))
+
+
+def _safe_working_user(value: str) -> str:
+    user = _safe_oracle_identifier(value)
+    if user in PROTECTED_WORKING_USER_NAMES:
+        raise ValueError("DB_USER must not be an administrative, system, or sample schema name.")
+    return user
+
+
+def _safe_oracle_identifier(value: str) -> str:
+    upper = value.upper()
+    if not re.fullmatch(r"[A-Z][A-Z0-9_$#]{0,127}", upper):
+        raise ValueError("Oracle identifier must be simple and unquoted.")
+    return upper
+
+
+def _admin_requested_privileges(
+    *,
+    grant_profile: str,
+) -> list[str]:
+    privileges = ["CREATE SESSION"]
+    if grant_profile == "prototype-any-table-read":
+        privileges.append("DWROLE")
+        privileges.append("SELECT ANY TABLE")
+    return privileges
+
+
+def _admin_required_grants(
+    *,
+    grant_profile: str,
+) -> tuple[tuple[str, ...], tuple[str, ...]]:
+    roles: tuple[str, ...] = ()
+    sys_privileges = ("CREATE SESSION",)
+    if grant_profile == "prototype-any-table-read":
+        roles = ("DWROLE",)
+        sys_privileges = ("CREATE SESSION", "SELECT ANY TABLE")
+    return roles, sys_privileges
+
+
+def _sql_string_list(values: Sequence[str]) -> str:
+    cleaned = sorted({str(value).upper().replace("'", "''") for value in values})
+    if not cleaned:
+        return "''"
+    return ",".join(f"'{value}'" for value in cleaned)
+
+
+def _minimal_operator_sqlcl_env() -> dict[str, str]:
+    env: dict[str, str] = {}
+    for key in ("PATH", "JAVA_HOME", "HOME", "LANG", "LC_ALL"):
+        value = os.environ.get(key)
+        if value:
+            env[key] = value
+    return env
+
+
+def _redact_admin_sqlcl_output(
+    config: OracleAdwConfig,
+    text: str,
+    stdin: str,
+) -> str:
+    redacted = text.replace(stdin, "[REDACTED_STDIN]")
+    for value in (
+        config.admin_user_pass,
+        config.db_user_pass,
+        config.db_dsn,
+        config.db_wallet_pass,
+    ):
+        if value and len(value) >= 4:
+            redacted = redacted.replace(value, "[REDACTED]")
+    return redact(redacted)
+
+
+def _operator_context() -> dict[str, object]:
+    return {
+        "os_user": getpass.getuser(),
+        "cwd": os.getcwd(),
+    }

@@ -8,12 +8,24 @@ from time import monotonic
 from typing import Any, Callable, Literal, Protocol
 
 from .audit import RunRecord, append_audit
+from .query_plan import QueryPlanArtifact, build_query_plan_from_context
 from .redaction import redact
+from .result_explanation import build_fake_result_explanation
+from .schema_context import build_compact_schema_context, load_schema_artifacts
+from .sql_execution import FakeSqlExecutionAdapter
 
 
 ToolState = Literal["completed", "failed", "invalid", "blocked"]
 ToolArgType = Literal["string", "integer", "number", "boolean", "object", "array"]
 ToolHandler = Callable[[dict[str, Any]], dict[str, Any]]
+
+_PROJECT_ROOT = Path(__file__).resolve().parent.parent
+_SCHEMA_METADATA_PATH = (
+    _PROJECT_ROOT / "docs/generated/schema-context/oracle_adw_sh.schema-metadata.v1.json"
+)
+_CURATED_SEED_PATH = (
+    _PROJECT_ROOT / "docs/generated/schema-context/oracle_adw_sh.curated-seed.v1.json"
+)
 
 
 class ToolEventSink(Protocol):
@@ -135,6 +147,40 @@ class ToolRegistry:
         return errors
 
 
+def default_tool_registry() -> ToolRegistry:
+    registry = ToolRegistry()
+    registry.register(
+        ToolSpec(
+            name="mock_schema_context",
+            description="Return compact read-only Oracle ADW schema context without external access.",
+            parameters=(
+                ToolParameter(
+                    name="required_context",
+                    type="array",
+                    required=False,
+                    description="Context artifacts requested by intent analysis.",
+                ),
+                ToolParameter(
+                    name="request_text",
+                    type="string",
+                    required=False,
+                    description="Original user request text used for deterministic schema retrieval.",
+                ),
+                ToolParameter(
+                    name="request_terms",
+                    type="array",
+                    required=False,
+                    description="Optional normalized request terms used for schema retrieval.",
+                ),
+            ),
+            risk_level="low",
+            read_only=True,
+        ),
+        _mock_schema_context,
+    )
+    return registry
+
+
 class ToolRunner:
     def __init__(
         self,
@@ -250,3 +296,162 @@ def _matches_type(value: Any, expected: ToolArgType) -> bool:
 
 def _elapsed_ms(started: float) -> int:
     return max(0, round((monotonic() - started) * 1000))
+
+
+def _mock_schema_context(args: dict[str, Any]) -> dict[str, Any]:
+    requested = args.get("required_context", [])
+    request_text = args.get("request_text", "")
+    request_terms = args.get("request_terms", [])
+    if not isinstance(requested, list):
+        requested = []
+    if not isinstance(request_text, str):
+        request_text = ""
+    if not isinstance(request_terms, list):
+        request_terms = []
+
+    artifacts = load_schema_artifacts(
+        _SCHEMA_METADATA_PATH,
+        _CURATED_SEED_PATH,
+        expected_profile_id="oracle_adw_sh.v1",
+    )
+    compact = build_compact_schema_context(
+        artifacts,
+        request_text=request_text,
+        request_terms=[str(term) for term in request_terms],
+    )
+    context = compact.to_dict()
+    output = {
+        "mode": "compact_schema_context_read_only",
+        "external_access": False,
+        "sql_generation_enabled": False,
+        "sql_execution_enabled": False,
+        "requested_context": requested,
+        "available_context": ["oracle_adw_schema", "business_glossary", "sample_masking_policy"],
+        "profile_id": context["profile_id"],
+        "schema_metadata_artifact_id": context["schema_metadata_artifact_id"],
+        "curated_seed_artifact_id": context["curated_seed_artifact_id"],
+        "schema_metadata_version": context["schema_metadata_version"],
+        "curated_seed_version": context["curated_seed_version"],
+        "selected_table_ids": context["selected_table_ids"],
+        "considered_tables": context["considered_tables"],
+        "rejected_tables": context["rejected_tables"],
+        "glossary_matches": context["glossary_matches"],
+        "clarification": context["clarification"],
+        "masking": {
+            "policy_version": context["masking_policy_version"],
+            "sample_values": context["sample_values"],
+        },
+        "context": context["context"],
+        "next_action": "SQL generation remains closed; use this context only for schema inspection or clarification.",
+    }
+    query_plan = build_query_plan_from_context(
+        compact,
+        request_text=request_text,
+    )
+    query_plan_output = query_plan.to_dict()
+    if query_plan.status != "blocked":
+        output["query_plan"] = query_plan_output
+        fake_adapter = _fake_result_explanation_adapter(query_plan)
+        if fake_adapter is not None:
+            output["result_explanation"] = build_fake_result_explanation(
+                query_plan,
+                fake_adapter,
+            ).to_dict()
+    return output
+
+
+def _fake_result_explanation_adapter(query_plan: QueryPlanArtifact) -> FakeSqlExecutionAdapter | None:
+    if query_plan.status != "planned":
+        return None
+    aliases = {
+        str(item.get("alias"))
+        for item in (*query_plan.dimensions, *query_plan.measures)
+        if item.get("alias")
+    }
+    for required_aliases, fixture in _FAKE_RESULT_EXPLANATION_FIXTURES.items():
+        if set(required_aliases).issubset(aliases):
+            return FakeSqlExecutionAdapter(
+                rows=fixture["rows"],
+                columns=fixture["columns"],
+                metadata={
+                    "fixture_id": fixture["fixture_id"],
+                    "scenario_id": fixture["scenario_id"],
+                    "adapter_version": "fake-sql-execution-adapter.v1",
+                    "execution_state": "fake_only",
+                    "oracle_adw_execution": False,
+                    "sqlcl_execution": False,
+                },
+            )
+    return None
+
+
+_FAKE_RESULT_EXPLANATION_FIXTURES: dict[tuple[str, ...], dict[str, Any]] = {
+    ("month", "product_category", "revenue"): {
+        "fixture_id": "schema-context-product-month-fake-results",
+        "scenario_id": "sh-revenue-product-month-demo",
+        "columns": ("month", "product_category", "revenue"),
+        "rows": (
+            {
+                "month": "demo_month_01",
+                "product_category": "demo_category_alpha",
+                "revenue": 1000,
+            },
+            {
+                "month": "demo_month_02",
+                "product_category": "demo_category_beta",
+                "revenue": 1250,
+            },
+        ),
+    },
+    ("month", "channel", "revenue"): {
+        "fixture_id": "schema-context-channel-month-fake-results",
+        "scenario_id": "sh-revenue-channel-month-demo",
+        "columns": ("month", "channel", "revenue"),
+        "rows": (
+            {
+                "month": "demo_month_01",
+                "channel": "demo_channel_direct",
+                "revenue": 2100,
+            },
+            {
+                "month": "demo_month_02",
+                "channel": "demo_channel_partner",
+                "revenue": 1980,
+            },
+        ),
+    },
+    ("month", "promotion_category", "revenue"): {
+        "fixture_id": "schema-context-promotion-category-month-fake-results",
+        "scenario_id": "sh-revenue-promotion-category-month-demo",
+        "columns": ("month", "promotion_category", "revenue"),
+        "rows": (
+            {
+                "month": "demo_month_01",
+                "promotion_category": "demo_promo_category_alpha",
+                "revenue": 760,
+            },
+            {
+                "month": "demo_month_02",
+                "promotion_category": "demo_promo_category_beta",
+                "revenue": 930,
+            },
+        ),
+    },
+    ("month", "promotion_subcategory", "revenue"): {
+        "fixture_id": "schema-context-promotion-subcategory-month-fake-results",
+        "scenario_id": "sh-revenue-promotion-subcategory-month-demo",
+        "columns": ("month", "promotion_subcategory", "revenue"),
+        "rows": (
+            {
+                "month": "demo_month_01",
+                "promotion_subcategory": "demo_promo_subcategory_alpha",
+                "revenue": 410,
+            },
+            {
+                "month": "demo_month_02",
+                "promotion_subcategory": "demo_promo_subcategory_beta",
+                "revenue": 530,
+            },
+        ),
+    },
+}

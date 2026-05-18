@@ -14,6 +14,7 @@ from .types import utc_now
 
 
 TRACE_SCHEMA_VERSION = "agent-runtime.trace.v1"
+TRACE_EVENT_SCHEMA_VERSION = "agent-runtime.trace-event.v1"
 
 
 class SecretLeakError(AssertionError):
@@ -90,10 +91,46 @@ def load_monitor_events(events_path: Path) -> list[dict[str, Any]]:
     if not events_path.exists():
         return []
     return [
-        json.loads(line)
+        normalize_monitor_event(json.loads(line))
         for line in events_path.read_text(encoding="utf-8").splitlines()
         if line.strip()
     ]
+
+
+def normalize_monitor_event(event: dict[str, Any]) -> dict[str, Any]:
+    """Convert monitor JSONL events into the generic trace event shape."""
+    event_type = str(event.get("event", "unknown"))
+    payload = redact(event.get("data", {}))
+    return {
+        "schema_version": TRACE_EVENT_SCHEMA_VERSION,
+        "run_id": event.get("run_id"),
+        "sequence": event.get("sequence"),
+        "created_at": event.get("created_at"),
+        "event_type": event_type,
+        "category": _event_category(event_type),
+        "payload": payload,
+        "event": event_type,
+        "data": payload,
+    }
+
+
+def _event_category(event_type: str) -> str:
+    if event_type.startswith("workflow_"):
+        return "workflow"
+    if event_type in {
+        "human_gate_opened",
+        "human_decision_recorded",
+        "resume_validation_failed",
+        "resume_validation_passed",
+    }:
+        return "workflow"
+    if event_type.startswith("target_load") or event_type.startswith("trusted_checkpoint"):
+        return "workflow"
+    if event_type.startswith("run_"):
+        return "run"
+    if event_type.startswith("tool_"):
+        return "tool"
+    return "agent"
 
 
 def write_trace(record: TraceRecord, trace_dir: Path) -> Path:

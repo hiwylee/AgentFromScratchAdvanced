@@ -144,6 +144,31 @@ The agent should produce a review packet rather than a vague question:
 - available actions;
 - impact of approval or rejection.
 
+## Trace And Checkpoint Resume Boundary
+
+Workflow monitor events are promoted into the generic trace event schema when
+loaded for trace output. Each trace event carries a trace-event schema version,
+run id, sequence, creation time, event type, category, and redacted payload.
+Workflow pause, resume, checkpoint, human-decision, validation, and target-load
+attempt events are classified as workflow events so evals and later review
+tools can reason over the same trace shape used by ordinary agent runs.
+
+The current trusted checkpoint boundary is intentionally narrow and local:
+
+- the engine creates a checkpoint packet before any target-system D load;
+- the packet includes an engine-computed checkpoint identity and SHA-256 hash;
+- human approval must echo both identity and hash from the review packet;
+- resume recomputes the hash from the engine-held checkpoint before calling D;
+- missing, mismatched, or tampered checkpoint data blocks the load and records
+  validation failure events in monitor/audit output.
+
+This is not yet durable signed checkpoint persistence. It prevents approval
+from being based on caller-supplied arbitrary JSON alone, but approval remains
+safe only for the in-process mock workflow checkpoint store. Persistent
+`approve-workflow` style resume and real target writes stay closed until the
+checkpoint store can bind the digest to durable storage, approver
+authorization, idempotency key, and replay state.
+
 ## Database Analysis Integration
 
 Database analysis is a reusable workflow capability:

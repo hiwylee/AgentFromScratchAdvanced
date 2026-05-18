@@ -10,6 +10,7 @@ from agent_runtime.tools import (
     ToolRegistry,
     ToolRunner,
     ToolSpec,
+    default_tool_registry,
 )
 
 
@@ -60,6 +61,19 @@ class ToolRegistryTests(unittest.TestCase):
         self.assertIn("missing required argument: id", errors)
         self.assertIn("argument limit must be integer", errors)
         self.assertIn("unknown argument: extra", errors)
+
+    def test_default_registry_exposes_only_low_risk_read_only_mock_tools(self):
+        registry = default_tool_registry()
+
+        specs = registry.specs()
+
+        self.assertEqual(["mock_schema_context"], [spec["name"] for spec in specs])
+        self.assertTrue(all(spec["read_only"] for spec in specs))
+        self.assertTrue(all(spec["risk_level"] == "low" for spec in specs))
+        self.assertEqual(
+            ["required_context", "request_text", "request_terms"],
+            [parameter["name"] for parameter in specs[0]["parameters"]],
+        )
 
 
 class ToolRunnerTests(unittest.TestCase):
@@ -186,6 +200,246 @@ class ToolRunnerTests(unittest.TestCase):
                 os.environ.pop("TOOL_TEST_PASSWORD", None)
             else:
                 os.environ["TOOL_TEST_PASSWORD"] = previous
+
+    def test_default_schema_context_tool_returns_compact_read_only_context(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            runner = ToolRunner(default_tool_registry(), context=_tool_context(tmp))
+
+            result = runner.run(
+                ToolCall(
+                    "mock_schema_context",
+                    {
+                        "required_context": ["oracle_adw_schema", "business_glossary"],
+                        "request_text": "show revenue by product by month from oracle adw",
+                    },
+                )
+            )
+
+            self.assertEqual("completed", result.state)
+            self.assertFalse(result.output["external_access"])
+            self.assertFalse(result.output["sql_generation_enabled"])
+            self.assertFalse(result.output["sql_execution_enabled"])
+            self.assertIn("SQL generation remains closed", result.output["next_action"])
+            self.assertEqual("oracle_adw_sh.v1", result.output["profile_id"])
+            self.assertIn("SH.SALES", result.output["selected_table_ids"])
+            self.assertIn("SH.PRODUCTS", result.output["selected_table_ids"])
+            self.assertIn("SH.TIMES", result.output["selected_table_ids"])
+            self.assertIn("considered_tables", result.output)
+            self.assertIn("rejected_tables", result.output)
+            self.assertIn("glossary_matches", result.output)
+            query_plan = result.output["query_plan"]
+            self.assertEqual("agent-runtime.query-plan.v1", query_plan["schema_version"])
+            self.assertEqual("planned", query_plan["status"])
+            self.assertTrue(query_plan["policy_validation"]["allowed"])
+            self.assertFalse(query_plan["execution"]["enabled"])
+            self.assertEqual("not_executed", query_plan["execution"]["status"])
+            self.assertNotIn("rows", query_plan["execution"])
+            self.assertNotIn("result_rows", query_plan)
+            result_explanation = result.output["result_explanation"]
+            self.assertEqual(
+                "agent-runtime.result-explanation.v1",
+                result_explanation["schema_version"],
+            )
+            self.assertEqual("succeeded", result_explanation["status"])
+            self.assertEqual("fake/deterministic", result_explanation["source"])
+            self.assertFalse(result_explanation["real_database_execution"])
+            self.assertEqual("fake", result_explanation["sql_execution_backend"])
+            self.assertEqual("fake", result_explanation["execution_response"]["backend"])
+            self.assertEqual(
+                "schema-context-product-month-fake-results",
+                result_explanation["adapter_response_metadata"]["fixture_id"],
+            )
+            self.assertEqual(
+                "sh-revenue-product-month-demo",
+                result_explanation["adapter_response_metadata"]["scenario_id"],
+            )
+            self.assertEqual(
+                "fake-sql-execution-adapter.v1",
+                result_explanation["adapter_response_metadata"]["adapter_version"],
+            )
+            self.assertFalse(result_explanation["adapter_response_metadata"]["oracle_adw_execution"])
+            self.assertFalse(result_explanation["adapter_response_metadata"]["sqlcl_execution"])
+            self.assertEqual(
+                (
+                    {
+                        "month": "demo_month_01",
+                        "product_category": "demo_category_alpha",
+                        "revenue": 1000,
+                    },
+                    {
+                        "month": "demo_month_02",
+                        "product_category": "demo_category_beta",
+                        "revenue": 1250,
+                    },
+                ),
+                result_explanation["rows"],
+            )
+            self.assertEqual(
+                "agent-runtime.sample-masking.v1",
+                result.output["masking"]["policy_version"],
+            )
+
+    def test_default_schema_context_tool_returns_channel_fake_result_explanation(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            runner = ToolRunner(default_tool_registry(), context=_tool_context(tmp))
+
+            result = runner.run(
+                ToolCall(
+                    "mock_schema_context",
+                    {
+                        "required_context": ["oracle_adw_schema", "business_glossary"],
+                        "request_text": "show revenue by channel by month from oracle adw",
+                    },
+                )
+            )
+
+            self.assertEqual("completed", result.state)
+            self.assertEqual("planned", result.output["query_plan"]["status"])
+            self.assertEqual(
+                ("month", "channel", "revenue"),
+                result.output["result_explanation"]["columns"],
+            )
+            self.assertEqual(
+                "schema-context-channel-month-fake-results",
+                result.output["result_explanation"]["adapter_response_metadata"]["fixture_id"],
+            )
+            self.assertEqual(
+                "sh-revenue-channel-month-demo",
+                result.output["result_explanation"]["adapter_response_metadata"]["scenario_id"],
+            )
+            self.assertFalse(result.output["result_explanation"]["real_database_execution"])
+            self.assertFalse(
+                result.output["result_explanation"]["adapter_response_metadata"]["oracle_adw_execution"]
+            )
+            self.assertFalse(
+                result.output["result_explanation"]["adapter_response_metadata"]["sqlcl_execution"]
+            )
+
+    def test_default_schema_context_tool_returns_promotion_fake_result_explanation(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            runner = ToolRunner(default_tool_registry(), context=_tool_context(tmp))
+
+            result = runner.run(
+                ToolCall(
+                    "mock_schema_context",
+                    {
+                        "required_context": ["oracle_adw_schema", "business_glossary"],
+                        "request_text": "show revenue by promotion by month from oracle adw",
+                    },
+                )
+            )
+
+            self.assertEqual("completed", result.state)
+            self.assertEqual("planned", result.output["query_plan"]["status"])
+            self.assertEqual(
+                ("month", "promotion_category", "revenue"),
+                result.output["result_explanation"]["columns"],
+            )
+            self.assertEqual(
+                "schema-context-promotion-category-month-fake-results",
+                result.output["result_explanation"]["adapter_response_metadata"]["fixture_id"],
+            )
+            self.assertEqual(
+                "sh-revenue-promotion-category-month-demo",
+                result.output["result_explanation"]["adapter_response_metadata"]["scenario_id"],
+            )
+            self.assertFalse(result.output["result_explanation"]["real_database_execution"])
+            self.assertFalse(
+                result.output["result_explanation"]["adapter_response_metadata"]["oracle_adw_execution"]
+            )
+            self.assertFalse(
+                result.output["result_explanation"]["adapter_response_metadata"]["sqlcl_execution"]
+            )
+
+    def test_default_schema_context_tool_returns_promotion_subcategory_fake_result_explanation(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            runner = ToolRunner(default_tool_registry(), context=_tool_context(tmp))
+
+            result = runner.run(
+                ToolCall(
+                    "mock_schema_context",
+                    {
+                        "required_context": ["oracle_adw_schema", "business_glossary"],
+                        "request_text": "show revenue by promotion subcategory by month from oracle adw",
+                    },
+                )
+            )
+
+            self.assertEqual("completed", result.state)
+            self.assertEqual("planned", result.output["query_plan"]["status"])
+            self.assertEqual(
+                ("month", "promotion_subcategory", "revenue"),
+                result.output["result_explanation"]["columns"],
+            )
+            self.assertEqual(
+                "schema-context-promotion-subcategory-month-fake-results",
+                result.output["result_explanation"]["adapter_response_metadata"]["fixture_id"],
+            )
+            self.assertEqual(
+                "sh-revenue-promotion-subcategory-month-demo",
+                result.output["result_explanation"]["adapter_response_metadata"]["scenario_id"],
+            )
+            self.assertFalse(result.output["result_explanation"]["real_database_execution"])
+            self.assertFalse(
+                result.output["result_explanation"]["adapter_response_metadata"]["oracle_adw_execution"]
+            )
+            self.assertFalse(
+                result.output["result_explanation"]["adapter_response_metadata"]["sqlcl_execution"]
+            )
+
+    def test_default_schema_context_tool_omits_query_plan_for_unsupported_prompt(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            runner = ToolRunner(default_tool_registry(), context=_tool_context(tmp))
+
+            result = runner.run(
+                ToolCall(
+                    "mock_schema_context",
+                    {
+                        "required_context": ["oracle_adw_schema"],
+                        "request_text": "inspect oracle schema tables",
+                    },
+                )
+            )
+
+            self.assertEqual("completed", result.state)
+            self.assertNotIn("query_plan", result.output)
+            self.assertNotIn("result_explanation", result.output)
+
+    def test_default_schema_context_tool_omits_result_explanation_for_channel_without_metric_time(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            runner = ToolRunner(default_tool_registry(), context=_tool_context(tmp))
+
+            result = runner.run(
+                ToolCall(
+                    "mock_schema_context",
+                    {
+                        "required_context": ["oracle_adw_schema", "business_glossary"],
+                        "request_text": "Show channels from the Oracle ADW SH schema.",
+                    },
+                )
+            )
+
+            self.assertEqual("completed", result.state)
+            self.assertNotIn("query_plan", result.output)
+            self.assertNotIn("result_explanation", result.output)
+
+    def test_default_schema_context_tool_omits_result_explanation_for_ambiguous_region_month(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            runner = ToolRunner(default_tool_registry(), context=_tool_context(tmp))
+
+            result = runner.run(
+                ToolCall(
+                    "mock_schema_context",
+                    {
+                        "required_context": ["oracle_adw_schema", "business_glossary"],
+                        "request_text": "Show monthly revenue by region from the Oracle ADW SH schema.",
+                    },
+                )
+            )
+
+            self.assertEqual("completed", result.state)
+            self.assertEqual("clarification_required", result.output["query_plan"]["status"])
+            self.assertNotIn("result_explanation", result.output)
 
 
 def _tool_context(

@@ -11,6 +11,13 @@ from .audit import RunRecord, append_audit
 from .intent import analyze_user_intent
 from .model import MockModel
 from .monitor import RunMonitor
+from .tools import (
+    ToolCall,
+    ToolExecutionContext,
+    ToolRegistry,
+    ToolRunner,
+    default_tool_registry,
+)
 from .types import Action, Budget, CancellationToken, FinalAnswer, Message, Observation, RunState
 
 
@@ -43,12 +50,16 @@ class AgentLoop:
         model: MockModel | None = None,
         budget: Budget | None = None,
         cancellation_token: CancellationToken | None = None,
+        tool_registry: ToolRegistry | None = None,
+        tool_max_attempts: int = 1,
         run_root: Path = Path(".agent/runs"),
         audit_path: Path = Path(".agent/audit.jsonl"),
     ) -> None:
         self.model = model or MockModel()
         self.budget = budget or Budget()
         self.cancellation_token = cancellation_token or CancellationToken()
+        self.tool_registry = tool_registry or default_tool_registry()
+        self.tool_max_attempts = max(1, tool_max_attempts)
         self.run_root = run_root
         self.audit_path = audit_path
 
@@ -109,13 +120,32 @@ class AgentLoop:
             state, reason = stopped
             return self._finish_stopped(monitor, intent_data, action, state, reason)
 
-        observation = Observation(
-            source="mock_runtime",
-            content={
-                "step": "no_external_tools",
-                "reason": "Milestone 1 records intent and next action only.",
-            },
-        )
+        tool_call = _tool_call_for_action(action, user_text=user_text, registry=self.tool_registry)
+        if tool_call is not None:
+            stopped = self._stop_state(started, action_steps_used, token, check_max_steps=True)
+            if stopped is not None:
+                state, reason = stopped
+                return self._finish_stopped(monitor, intent_data, action, state, reason)
+
+            tool_runner = ToolRunner(
+                self.tool_registry,
+                context=ToolExecutionContext(run_id=run_id, audit_path=self.audit_path),
+                event_sink=monitor.event,
+            )
+            tool_result = tool_runner.run(tool_call, max_attempts=self.tool_max_attempts)
+            action_steps_used += 1
+            observation = Observation(
+                source=f"tool:{tool_result.tool_name}",
+                content={"tool_result": tool_result.to_dict()},
+            )
+        else:
+            observation = Observation(
+                source="mock_runtime",
+                content={
+                    "step": "no_external_tools",
+                    "reason": "Milestone 1 records intent and next action only.",
+                },
+            )
         monitor.event("observation_recorded", {"observation": observation.to_dict()})
 
         stopped = self._stop_state(started, action_steps_used, token)
@@ -219,6 +249,44 @@ def _final_answer(action: Action) -> FinalAnswer:
         assumptions=[],
         next_action="Answer directly.",
     )
+
+
+def _tool_call_for_action(
+    action: Action,
+    *,
+    user_text: str,
+    registry: ToolRegistry,
+) -> ToolCall | None:
+    if action.kind not in {"inspect_schema", "ask_clarification"}:
+        return None
+    required_context = action.payload.get("required_context", [])
+    if not isinstance(required_context, list):
+        required_context = []
+    if action.kind == "ask_clarification" and "oracle_adw_schema" not in required_context:
+        return None
+    request_terms = action.payload.get("request_terms", [])
+    if not isinstance(request_terms, list):
+        request_terms = []
+
+    arguments: dict[str, object] = {
+        "required_context": required_context,
+        "request_text": user_text,
+        "request_terms": request_terms,
+    }
+    return ToolCall("mock_schema_context", _supported_tool_arguments(registry, "mock_schema_context", arguments))
+
+
+def _supported_tool_arguments(
+    registry: ToolRegistry,
+    tool_name: str,
+    arguments: dict[str, object],
+) -> dict[str, object]:
+    try:
+        registered = registry.get(tool_name)
+    except KeyError:
+        return arguments
+    supported = {parameter.name for parameter in registered.spec.parameters}
+    return {name: value for name, value in arguments.items() if name in supported}
 
 
 def _control_action(reason: str) -> Action:

@@ -4,6 +4,7 @@ import subprocess
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from agent_runtime.oracle_adw import (
     OracleAdwConfig,
@@ -11,7 +12,13 @@ from agent_runtime.oracle_adw import (
     SAMPLE_SCHEMA_PROFILE_QUERY,
     SCHEMA_INTROSPECTION_QUERIES,
     SqlclRunResult,
+    SqlclReadOnlyExecutionSettings,
+    build_read_only_sqlcl_execution_plan,
+    build_redacted_sqlcl_audit_record,
     build_working_user_provisioning_plan,
+    classify_sqlcl_read_only_result,
+    classify_sqlcl_timeout,
+    parse_sqlcl_json_output,
     recommend_sample_dataset,
     validate_read_only_sql,
     verify_sqlcl,
@@ -116,6 +123,43 @@ class OracleAdwSqlclTests(unittest.TestCase):
             self.assertTrue(status.version_checked)
             self.assertEqual("sqlcl_version_check_failed:TimeoutExpired", status.error)
 
+    def test_sqlcl_version_check_uses_minimal_environment(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            sqlcl = Path(tmp) / "sql"
+            sqlcl.write_text("#!/bin/sh\n", encoding="utf-8")
+            sqlcl.chmod(sqlcl.stat().st_mode | stat.S_IXUSR)
+            captured_env = {}
+
+            def fake_run(command, **kwargs):
+                captured_env.update(kwargs["env"])
+                return subprocess.CompletedProcess(
+                    args=command,
+                    returncode=0,
+                    stdout="SQLcl test",
+                    stderr="",
+                )
+
+            with patch.dict(
+                os.environ,
+                {
+                    "PATH": "/bin",
+                    "HOME": "/home/operator",
+                    "DB_USER_PASS": "db-secret",
+                    "DB_DSN": "adw-secret-service",
+                    "ADMIN_USER_PASS": "admin-secret",
+                },
+                clear=True,
+            ):
+                with patch("agent_runtime.oracle_adw.subprocess.run", fake_run):
+                    status = verify_sqlcl(OracleAdwConfig(sqlcl_path=str(sqlcl)))
+
+            self.assertTrue(status.ok)
+            self.assertEqual("/bin", captured_env["PATH"])
+            self.assertEqual("/home/operator", captured_env["HOME"])
+            self.assertNotIn("DB_USER_PASS", captured_env)
+            self.assertNotIn("DB_DSN", captured_env)
+            self.assertNotIn("ADMIN_USER_PASS", captured_env)
+
 
 class OracleAdwWalletTests(unittest.TestCase):
     def test_wallet_checks_only_report_path_metadata(self):
@@ -140,6 +184,243 @@ class OracleAdwWalletTests(unittest.TestCase):
             redacted = status.to_redacted_dict()
             self.assertNotIn("do-not-read-this-secret", str(redacted))
             self.assertNotIn("wallet-secret", str(redacted))
+
+
+class OracleAdwSqlclExecutionBoundaryTests(unittest.TestCase):
+    def test_read_only_execution_plan_keeps_credentials_out_of_argv_and_redacted_surfaces(self):
+        config = OracleAdwConfig(
+            sqlcl_path="/opt/sqlcl/bin/sql",
+            admin_user_pass="admin-secret",
+            db_user="agent_ro",
+            db_user_pass="db-secret",
+            db_dsn="adw-secret-service",
+            db_wallet_path="/wallet",
+            db_wallet_pass="wallet-secret",
+        )
+
+        plan = build_read_only_sqlcl_execution_plan(
+            config,
+            "select customer_id from customers;",
+            settings=SqlclReadOnlyExecutionSettings(timeout_seconds=12, row_limit=25),
+        )
+
+        rendered_argv = " ".join(plan.command)
+        self.assertEqual(("/opt/sqlcl/bin/sql", "-S", "-L", "-nolog"), plan.command)
+        self.assertNotIn("db-secret", rendered_argv)
+        self.assertNotIn("adw-secret-service", rendered_argv)
+        self.assertNotIn("admin-secret", rendered_argv)
+        self.assertEqual({"TNS_ADMIN": "/wallet"}, dict(plan.env))
+        self.assertIn('connect AGENT_RO/"db-secret"@adw-secret-service', plan.stdin)
+        self.assertIn("ROWNUM <= 25", plan.stdin)
+        self.assertIn(") WHERE ROWNUM <= 25;\nexit", plan.stdin)
+        self.assertEqual(12, plan.timeout_seconds)
+
+        redacted = plan.to_redacted_dict()
+        redacted_text = str(redacted)
+        self.assertEqual(REDACTION, redacted["stdin"])
+        self.assertNotIn("db-secret", redacted_text)
+        self.assertNotIn("adw-secret-service", redacted_text)
+        self.assertNotIn("admin-secret", redacted_text)
+        self.assertNotIn("wallet-secret", redacted_text)
+
+    def test_execution_plan_rejects_missing_config_bad_limits_and_unsafe_sql(self):
+        valid_config = OracleAdwConfig(
+            sqlcl_path="/opt/sqlcl/bin/sql",
+            db_user="agent_ro",
+            db_user_pass="db-secret",
+            db_dsn="adw-service",
+        )
+
+        with self.assertRaises(ValueError):
+            build_read_only_sqlcl_execution_plan(
+                valid_config,
+                "select * from customers",
+                settings=SqlclReadOnlyExecutionSettings(timeout_seconds=0),
+            )
+        with self.assertRaises(ValueError):
+            build_read_only_sqlcl_execution_plan(
+                valid_config,
+                "select * from customers",
+                settings=SqlclReadOnlyExecutionSettings(row_limit=0),
+            )
+        with self.assertRaises(ValueError):
+            build_read_only_sqlcl_execution_plan(valid_config, "delete from customers")
+        with self.assertRaises(ValueError):
+            build_read_only_sqlcl_execution_plan(
+                OracleAdwConfig(sqlcl_path="/opt/sqlcl/bin/sql", db_user="agent_ro"),
+                "select * from customers",
+            )
+
+    def test_execution_plan_rejects_control_characters_before_rendering_stdin(self):
+        rejected_values = [
+            (
+                "db_user_pass",
+                "secret-line-one\nsecret-line-two",
+                ("secret-line-one", "secret-line-two"),
+            ),
+            (
+                "db_user_pass",
+                "secret-prefix\x1fsecret-suffix",
+                ("secret-prefix", "secret-suffix"),
+            ),
+            (
+                "db_dsn",
+                "adw-service\nhost echo injected",
+                ("adw-service", "host echo injected"),
+            ),
+            (
+                "db_dsn",
+                "adw-service\x7fcontrol",
+                ("adw-service", "control"),
+            ),
+        ]
+
+        for field_name, rejected_value, sensitive_fragments in rejected_values:
+            with self.subTest(field_name=field_name):
+                config_kwargs = {
+                    "sqlcl_path": "/opt/sqlcl/bin/sql",
+                    "db_user": "agent_ro",
+                    "db_user_pass": "db-secret",
+                    "db_dsn": "adw-service",
+                }
+                config_kwargs[field_name] = rejected_value
+                config = OracleAdwConfig(**config_kwargs)
+
+                with patch(
+                    "agent_runtime.oracle_adw._build_sqlcl_read_only_stdin",
+                    side_effect=AssertionError("stdin renderer should not be called"),
+                ) as render_stdin:
+                    with self.assertRaises(ValueError) as raised:
+                        build_read_only_sqlcl_execution_plan(
+                            config,
+                            "select * from customers",
+                        )
+
+                render_stdin.assert_not_called()
+                exception_text = f"{raised.exception!r} {raised.exception}"
+                self.assertNotIn(rejected_value, exception_text)
+                self.assertNotIn(
+                    rejected_value.encode("unicode_escape").decode("ascii"),
+                    exception_text,
+                )
+                for fragment in sensitive_fragments:
+                    self.assertNotIn(fragment, exception_text)
+
+                redacted_text = f"{config.redacted_status()} {config.to_redacted_dict()}"
+                self.assertNotIn(rejected_value, redacted_text)
+                self.assertNotIn(
+                    rejected_value.encode("unicode_escape").decode("ascii"),
+                    redacted_text,
+                )
+                for fragment in sensitive_fragments:
+                    self.assertNotIn(fragment, redacted_text)
+
+    def test_parse_sqlcl_json_output_supports_sqlcl_shape_and_enforces_row_limit(self):
+        output = """
+        {
+          "results": [
+            {
+              "columns": [{"name": "CUSTOMER_ID"}, {"name": "AMOUNT"}],
+              "items": [
+                {"CUSTOMER_ID": 1, "AMOUNT": 10},
+                {"CUSTOMER_ID": 2, "AMOUNT": 20}
+              ]
+            }
+          ]
+        }
+        """
+
+        parsed = parse_sqlcl_json_output(output, row_limit=2)
+
+        self.assertEqual(("CUSTOMER_ID", "AMOUNT"), parsed.columns)
+        self.assertEqual(2, parsed.row_count)
+        self.assertEqual(20, parsed.rows[1]["AMOUNT"])
+        with self.assertRaises(ValueError):
+            parse_sqlcl_json_output(output, row_limit=1)
+        with self.assertRaises(ValueError):
+            parse_sqlcl_json_output("not-json", row_limit=10)
+
+    def test_classify_result_redacts_secret_values_from_rows_errors_and_audit(self):
+        config = OracleAdwConfig(
+            sqlcl_path="/opt/sqlcl/bin/sql",
+            db_user="agent_ro",
+            db_user_pass="db-secret",
+            db_dsn="adw-secret-service",
+            db_wallet_pass="wallet-secret",
+        )
+        plan = build_read_only_sqlcl_execution_plan(config, "select * from customers")
+
+        success = classify_sqlcl_read_only_result(
+            plan,
+            SqlclRunResult(
+                returncode=0,
+                stdout='{"items": [{"VALUE": "db-secret via adw-secret-service"}]}',
+            ),
+        )
+        success_dict = success.to_redacted_dict()
+        self.assertTrue(success.ok)
+        self.assertNotIn("db-secret", str(success_dict))
+        self.assertNotIn("adw-secret-service", str(success_dict))
+        self.assertIn(REDACTION, str(success_dict))
+
+        failure = classify_sqlcl_read_only_result(
+            plan,
+            SqlclRunResult(
+                returncode=942,
+                stderr="ORA-00942 db-secret adw-secret-service wallet-secret",
+            ),
+        )
+        failure_dict = failure.to_redacted_dict()
+        self.assertFalse(failure.ok)
+        self.assertEqual("sqlcl_error", failure.error.code)
+        self.assertNotIn("db-secret", str(failure_dict))
+        self.assertNotIn("adw-secret-service", str(failure_dict))
+        self.assertNotIn("wallet-secret", str(failure_dict))
+
+        audit = build_redacted_sqlcl_audit_record("oracle_adw.read_only_query", plan, failure)
+        audit_text = str(audit)
+        self.assertNotIn("db-secret", audit_text)
+        self.assertNotIn("adw-secret-service", audit_text)
+        self.assertNotIn("wallet-secret", audit_text)
+        self.assertEqual(REDACTION, audit["execution"]["stdin"])
+
+    def test_timeout_error_is_redacted_and_real_execution_remains_closed(self):
+        config = OracleAdwConfig(
+            sqlcl_path="/opt/sqlcl/bin/sql",
+            db_user="agent_ro",
+            db_user_pass="db-secret",
+            db_dsn="adw-secret-service",
+        )
+        plan = build_read_only_sqlcl_execution_plan(
+            config,
+            "select * from customers",
+            settings=SqlclReadOnlyExecutionSettings(timeout_seconds=3),
+        )
+        timeout = subprocess.TimeoutExpired(
+            cmd=list(plan.command),
+            timeout=3,
+            stderr="db-secret adw-secret-service",
+        )
+
+        outcome = classify_sqlcl_timeout(plan, timeout)
+        redacted = outcome.to_redacted_dict()
+
+        self.assertFalse(outcome.ok)
+        self.assertEqual("timeout", outcome.error.code)
+        self.assertNotIn("db-secret", str(redacted))
+        self.assertNotIn("adw-secret-service", str(redacted))
+
+        connector = OracleAdwReadOnlyConnector(config)
+        with self.assertRaises(NotImplementedError):
+            connector.execute_read_only_query("select * from customers")
+
+    def test_design_doc_does_not_include_fixture_secret_values(self):
+        doc = Path("docs/design-docs/oracle-adw-connection.md").read_text(encoding="utf-8")
+
+        self.assertNotIn("db-secret", doc)
+        self.assertNotIn("admin-secret", doc)
+        self.assertNotIn("wallet-secret", doc)
+        self.assertNotIn("adw-secret-service", doc)
 
 
 class OracleAdwProvisioningTests(unittest.TestCase):
