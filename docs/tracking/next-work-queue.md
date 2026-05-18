@@ -13,11 +13,11 @@ it after `docs/tracking/current-state.md` and before starting new work.
   target-system writes closed until the listed safety gates pass.
 - Before commit, get a senior-review pass and run focused plus full tests.
 
-## Active Parallel Wave: 2026-05-16
+## Completed Parallel Wave: 2026-05-16
 
 ### Worker A: Tool Loop Integration
 
-Status: ready for background worker.
+Status: completed.
 
 Primary scope:
 
@@ -42,7 +42,7 @@ Acceptance:
 
 ### Worker B: Workflow Trace And Resume Safety Design
 
-Status: ready for background worker.
+Status: completed.
 
 Primary scope:
 
@@ -69,7 +69,7 @@ Acceptance:
 
 ### Worker C: Oracle ADW SQLcl Execution Design
 
-Status: ready for background worker.
+Status: completed.
 
 Primary scope:
 
@@ -97,7 +97,7 @@ Acceptance:
 
 ### Worker D: Compact Schema Context Plan
 
-Status: ready for background worker.
+Status: completed.
 
 Primary scope:
 
@@ -119,12 +119,241 @@ Acceptance:
   criteria.
 - Any open decision is explicit and narrow.
 
-## Recommended Start Order
+## Completed Milestone 5 Fixture/Retrieval Wave
 
-1. Worker A and Worker D can run immediately in parallel.
-2. Worker B can run in parallel if it limits changes to trace/workflow files.
-3. Worker C should start as design/tests first; real execution stays closed.
-4. Integrate worker outputs in this order: D, A, B, C.
+Milestone 5 should start with data artifacts and validation before any
+NL-to-SQL generation:
+
+1. Add SH schema metadata and curated seed JSON fixtures under
+   `docs/generated/schema-context/`.
+2. Add seed-to-metadata validation for missing table and column references.
+3. Add deterministic lexical table/column retrieval with ambiguity handling.
+4. Add sample-value masking and allowlist enforcement.
+5. Record compact schema context evidence in trace/audit output.
+
+Items 1-4 are complete. Item 5 remains open as the next integration step.
+
+## Completed Runtime Context And Adapter Wave
+
+Integrate compact schema context into the runtime without enabling SQL
+generation:
+
+1. Wire `mock_schema_context` or a replacement low-risk read-only tool to load
+   the generated SH artifacts and return a redacted compact context result.
+2. Record schema context evidence in monitor, audit, and trace records,
+   including selected/rejected tables, scores, glossary matches, masking
+   decisions, and artifact ids.
+3. Add CLI smoke tests for sales/product/month prompts that prove context is
+   selected but SQL generation remains closed.
+4. Decide whether context records should be separate trace events or embedded
+   observations before Milestone 6 query planning begins.
+
+Items 1-3 are complete. Context evidence currently flows through tool
+observations, audit records, and normalized trace events. A separate dedicated
+schema-context trace event can be added later if review tools need that shape.
+
+The SQL execution boundary now uses a backend-neutral adapter. SQLcl is an
+implementation behind `SqlclReadOnlyAdapter`, not an agent-facing tool
+contract. Real SQL execution remains closed.
+
+## Completed Milestone 6 Query-Plan Runtime Wave
+
+Plan Milestone 6 NL-to-SQL without enabling real execution:
+
+1. Define query-plan artifact shape for compact-context-backed SQL proposals.
+2. Generate deterministic draft query plans for the SH revenue/product/month
+   prompt from selected schema context.
+3. Validate proposed SQL with the existing Oracle read-only policy and closed
+   SQL execution adapter.
+4. Record query-plan assumptions, selected schema evidence, and refusal or
+   clarification reasons in trace/audit output.
+
+Items 1-4 are implemented. Query-plan artifacts now flow through the runtime
+schema-context tool observation/audit/trace path for supported prompts.
+
+## Completed Query-Plan Eval And Pattern-Expansion Wave
+
+Expanded query planning and eval coverage without enabling execution:
+
+1. Add stable golden eval assertions for query-plan fields once trace-event
+   subset matching is tuned for nested observation payloads.
+2. Add refusal/clarification eval cases for unsupported or ambiguous
+   NL-to-SQL prompts.
+3. Add more SH query-plan patterns only when selected compact schema context is
+   unambiguous.
+4. Keep live SQL execution closed; use `SqlclReadOnlyAdapter` only as a closed
+   validation boundary until the execution runner safety gates pass.
+
+Items 1-4 are complete for the current Milestone 6 slice.
+
+## Completed Fake Result Explanation Wave
+
+Planned and implemented fake result explanation without enabling real ADW
+execution:
+
+1. Define `agent-runtime.result-explanation.v1` artifact fields for query-plan
+   provenance, fake adapter metadata, fixture identity, row summaries,
+   explanation text, caveats, and `real_database_execution: false`.
+2. Consume an existing `planned` query-plan artifact for the supported SH
+   revenue/product/month pattern. Do not regenerate SQL from the original
+   prompt in the explanation step.
+3. Route fixture execution through `FakeSqlExecutionAdapter` only. Record
+   adapter name, adapter version, deterministic scenario id, fixture id,
+   column names, row count, and fixture limits in trace/audit output.
+4. Write cautious explanation behavior: describe only what the fake fixture
+   rows show, label the output as non-real database output, and avoid wording
+   that implies current Oracle ADW facts, production records, or live SQLcl
+   success.
+5. Add eval coverage for the happy path and safety gates: blocked, ambiguous,
+   unsupported, or policy-rejected query plans must not produce or explain fake
+   rows.
+6. Keep wording and contracts generic enough that Worker A can change internal
+   implementation details without changing the design intent.
+
+Safety gates for this wave:
+
+- No code path may call `SqlclReadOnlyAdapter` or any real ADW connection while
+  producing fake explanations.
+- Every fake-result artifact, audit record, and trace observation must include
+  `real_database_execution: false`.
+- Fake rows must come from deterministic fixtures, not from a live database,
+  SQLcl subprocess, environment-derived connection, or ad hoc generated data.
+- Explanation text must be testable for non-real-output caveats and must never
+  present fixture rows as actual business facts.
+- Real ADW execution, admin apply, and persistent workflow target writes remain
+  closed until their separate safety gates are implemented and reviewed.
+
+Design reference: `docs/design-docs/database-natural-language.md`, section
+"Fake Result Explanation Artifacts After Query Planning".
+
+## Completed SQLcl Runner And Adapter-Gate Wave
+
+Implemented the SQLcl subprocess runner safety gates behind the existing
+backend-neutral adapter while keeping normal runtime ADW execution closed:
+
+1. Add a runner-level abstraction that accepts a SQLcl execution plan and
+   invokes SQLcl with an argv list shaped as `sql -S -L -nolog`. Keep
+   credentials, DSNs, rendered connect strings, wallet passwords, and SQL text
+   out of argv.
+2. Implement minimal base environment construction plus plan environment
+   merging. Permit only reviewed SQLcl keys such as `TNS_ADMIN`; reject or
+   ignore unexpected keys and prove credential variables do not leak into the
+   child process.
+3. Pass the SQLcl connect command, session setup, and query through private
+   stdin only. Exclude stdin from reprs, responses, traces, audit records, and
+   test failure output.
+4. Implement hard timeout handling that kills and waits for the SQLcl process,
+   then returns a structured timeout outcome through the existing Oracle ADW
+   classification helpers.
+5. Capture stdout and stderr separately with configured byte limits. Classify
+   oversized streams as `output_too_large` or `error_output_too_large` and
+   expose only bounded, redacted stderr tails.
+6. Keep JSON parsing, row-limit checks, credential redaction, and result/error
+   classification in the `oracle_adw` helper layer. The subprocess runner
+   should collect process output and status, not duplicate backend parsing
+   rules.
+7. Add redacted audit metadata for backend, mode, SQL hash, argv, working user,
+   timeout, row limit, stream limits, return-code class, and structured
+   outcome. Do not record stdin, raw SQL, DSN, passwords, wallet secrets, wallet
+   contents, or unredacted SQLcl output.
+8. Add adapter integration tests proving `SqlclReadOnlyAdapter` remains closed
+   by default, normal planning/fake-result flows cannot reach real execution,
+   and `allow_real_execution` is not enabled until the runner gates have a
+   senior-review pass.
+
+SQLcl MCP or server-based integration remains optional and is not part of this
+wave. This wave is only the local subprocess runner boundary behind
+`SqlclReadOnlyAdapter`; real SQL execution, real admin apply, and target-system
+writes remain closed.
+
+Items 1-8 are complete for the local runner and adapter-gated integration
+slice. `SqlclReadOnlyAdapter` calls a runner only when
+`allow_real_execution=True`; all normal planning and fake-result flows keep
+real execution disabled.
+
+## Completed SQLcl Adapter Hardening Wave
+
+Hardened the SQLcl adapter path before any live ADW smoke test:
+
+1. Add adapter tests for standalone `SqlclRunnerResult` stream-limit statuses
+   and runner pre-output failures.
+2. Decide whether `SqlExecutionResponse.audit_metadata` should include
+   redacted runner metadata such as bounded byte counts, env keys, and
+   return-code class, or keep those details only in lower-level runner tests.
+3. Add a senior-review pass over `agent_runtime.sqlcl_runner`,
+   `agent_runtime.sql_execution`, and the Oracle ADW classification helpers.
+4. Define the explicit operator command or fixture-only smoke path that may set
+   `allow_real_execution=True`; do not enable it from agent-facing tools.
+5. Keep admin provisioning apply and persistent workflow target-system writes
+   closed on their separate review tracks.
+
+Items 1-4 are complete. The adapter now records a redacted runner summary in
+audit metadata, covers runner stream-limit and pre-output failure statuses, and
+redacts SQLcl connect-line echoes as a unit. SQLcl plan construction also
+rejects newline/control characters in `DB_DSN` and `DB_USER_PASS` before
+rendering private stdin. The operator-only smoke and read-only query paths now
+own the only reviewed runtime routes that may set `allow_real_execution=True`.
+
+## Completed Operator-Only ADW Command Wave
+
+Defined and implemented the operator-only live ADW paths without enabling them
+from normal runtime flows:
+
+1. Add an explicit command or harness entry point for a manual read-only smoke
+   query that constructs `SqlclReadOnlyAdapter(allow_real_execution=True)`.
+2. Require reviewed environment configuration and fail closed when SQLcl path,
+   wallet path, working user, DSN, password, or row/time limits are missing or
+   unsafe.
+3. Permit only a narrow first smoke SQL shape, such as `select 1 from dual` or
+   a bounded dictionary-view query, and continue to run read-only policy
+   validation before execution.
+4. Write redacted audit output with SQL hash, working user, runner status,
+   limits, and structured outcome. Do not record raw SQL text, stdin, DSN,
+   passwords, wallet secrets, or unredacted SQLcl output.
+5. Keep agent-facing tools, schema context, query planning, fake explanations,
+   admin provisioning apply, and persistent workflow target-system writes
+   unable to enable live execution.
+
+Items 1-5 are complete for smoke and reviewed read-only query execution.
+Admin provisioning is also formalized as a separate operator-only command with
+structured idempotency classification; it remains outside agent tools and
+read-only adapter defaults.
+
+## Completed Fake Explanation Pattern Expansion Wave
+
+Closed the remaining Milestone 6 fake-explanation gap across the currently
+supported SH query-plan patterns:
+
+1. Keep result explanations on the `FakeSqlExecutionAdapter` only.
+2. Route product/month, channel/month, promotion category/month, and promotion
+   subcategory/month plans to explicit deterministic demo fixtures.
+3. Preserve `source: fake/deterministic`, `real_database_execution: false`,
+   backend `fake`, and `oracle_adw_execution: false` / `sqlcl_execution: false`
+   metadata in every result-explanation artifact.
+4. Add focused tool tests and golden eval coverage for channel/month and
+   promotion/month traces.
+5. Preserve refusal behavior for ambiguous, unsupported, blocked, and write
+   prompts: no result explanation and no row fields.
+6. Require revenue and month terms before product/channel/promotion patterns
+   may propose SQL or attach fake rows, and record fixture id, scenario id, and
+   adapter version in fake-explanation provenance.
+
+## Next Implementation Wave
+
+Start Milestone 7 self-evolution controls without enabling automatic
+self-modification:
+
+1. Define `agent-runtime.improvement-candidate.v1` records for observed misses,
+   operator notes, eval failures, and review feedback.
+2. Add memory provenance fields so any future remembered instruction or
+   behavior-shaping fact records source, scope, confidence, timestamp, and
+   expiration/review state.
+3. Define a rollback path for prompt, policy, memory, and eval artifact changes
+   before any behavior-shaping update can be accepted.
+4. Add drift-detection fixtures for repeated database-analysis and workflow
+   prompts.
+5. Require frozen eval pass and explicit review status before accepting any
+   self-evolution candidate.
 
 ## Verification Commands
 
@@ -132,5 +361,9 @@ Acceptance:
 UV_CACHE_DIR=.uv-cache uv run --python 3.12 python -m unittest tests.test_tools tests.test_runtime_controls
 UV_CACHE_DIR=.uv-cache uv run --python 3.12 python -m unittest tests.test_workflow_engine tests.test_eval_runner
 UV_CACHE_DIR=.uv-cache uv run --python 3.12 python -m unittest tests.test_oracle_adw
+UV_CACHE_DIR=.uv-cache uv run --python 3.12 python -m unittest tests.test_schema_context
+UV_CACHE_DIR=.uv-cache uv run --python 3.12 python -m unittest tests.test_sql_execution
+UV_CACHE_DIR=.uv-cache uv run --python 3.12 python -m unittest tests.test_sqlcl_runner
+UV_CACHE_DIR=.uv-cache uv run --python 3.12 python -m unittest tests.test_query_plan
 UV_CACHE_DIR=.uv-cache uv run --python 3.12 python -m unittest discover -s tests
 ```

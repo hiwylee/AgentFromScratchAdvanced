@@ -167,3 +167,168 @@ benchmark/stress dataset.
 Rationale: `SH` has richer business semantics for natural-language analysis:
 sales, products, customers, channels, and time. `SSB` is useful later for
 larger star-schema benchmark tests.
+
+## 2026-05-16: Start Compact Schema Context With Artifact-First Lexical Retrieval
+
+Decision: Milestone 5 starts with deterministic lexical retrieval over a
+generated Oracle ADW schema metadata JSON artifact plus a curated SH table and
+glossary seed JSON artifact. Embedding retrieval is deferred until the lexical
+path has fixtures, trace records, and golden eval pressure showing it is not
+enough.
+
+Rationale: The first compact schema context needs to be inspectable,
+dependency-light, and easy to test. SH business semantics are small enough for
+curated seeds to cover early sales, product, customer, channel, and time
+questions, while SSB remains reserved for later benchmark and stress coverage.
+
+## 2026-05-16: Sample Values Are Deny-By-Default In Schema Context
+
+Decision: Compact schema context excludes raw sample values by default. Only
+explicitly allowlisted low-cardinality business category values may appear, and
+sensitive or high-cardinality columns must be omitted or represented with
+masked placeholders and masking reasons.
+
+Rationale: Sample values can leak personal, secret, or operational data. Early
+NL-to-SQL accuracy should rely first on schema names, comments, curated
+glossary entries, relationships, and aggregate profiles rather than raw rows.
+
+## 2026-05-17: SQLcl Runs Behind Adapter-Gated Execution Only
+
+Decision: SQLcl subprocess execution is implemented as a runner behind
+`SqlclReadOnlyAdapter`, and the adapter calls it only when
+`allow_real_execution=True`. Agent-facing planning, schema context, and fake
+result explanation paths must not enable this flag.
+
+Rationale: The project needs a tested local SQLcl boundary, but live ADW access
+is still a privileged operator action. Keeping SQLcl behind the adapter
+preserves backend neutrality, lets fake and real execution share response
+contracts, and prevents MCP/server or subprocess details from becoming the
+agent-facing tool contract.
+
+## 2026-05-17: Runner Metadata Is Audit-Only
+
+Decision: SQLcl runner details such as bounded byte counts, environment key
+names, timeout, command shape, and return status may be recorded as redacted
+audit metadata. Backend metadata exposed to callers should keep only generic
+execution state and `runner_status`.
+
+Rationale: Operators need enough process context to review failures and prove
+limits were enforced, but agent-facing responses should not depend on
+subprocess internals or receive stdout/stderr details. Stdin, raw SQL text,
+DSNs, passwords, wallet secrets, and unredacted SQLcl output remain excluded.
+
+## 2026-05-17: SQLcl Stream Limits Are Enforced During Capture
+
+Decision: The default SQLcl runner reads stdout and stderr through bounded live
+pipe readers and terminates the subprocess as soon as either stream exceeds its
+configured byte cap. Injected runner callables remain compatible with the
+existing `subprocess.run`-style test boundary.
+
+Rationale: Post-processing captured output does not protect the runtime from a
+large SQLcl result or noisy SQLcl error because `capture_output=True` buffers
+the full stream before limits are checked. Live bounded reads keep memory usage
+tied to configured caps before operator-only ADW smoke work begins.
+
+## 2026-05-17: Live ADW Smoke Is Operator-Only And Fixed-SQL
+
+Decision: The first live ADW execution path is
+`bin/agent operator adw-smoke --confirm-live-adw-smoke`. It runs only
+`select 1 as smoke_check from dual`, requires working-user credentials,
+absolute `SQLCL_PATH`, wallet-directory `DB_WALLET_PATH`, wallet TNS alias
+`DB_DSN`, and successful SQLcl verification, then constructs
+`SqlclReadOnlyAdapter(..., allow_real_execution=True)`.
+
+Rationale: A fixed, manually confirmed smoke command proves the live SQLcl
+boundary without turning natural-language requests or agent tools into live
+database execution paths. Requiring wallet/TNS alias form and working-user
+credentials keeps the first live check narrow, reviewable, and separated from
+admin setup or general query execution.
+
+## 2026-05-17: SQLcl Version Checks Use Minimal Environment
+
+Decision: The default SQLcl version check passes only a minimal allowlisted
+environment (`PATH`, `HOME`, `LANG`, and `LC_ALL`) to the subprocess.
+
+Rationale: SQLcl version checks do not need database credentials. Avoiding full
+process environment inheritance reduces the chance that credential variables
+are exposed to subprocesses before live ADW smoke execution begins.
+
+## 2026-05-17: SQLcl Execution Uses Minimal Runtime Environment
+
+Decision: Live SQLcl execution receives only the plan environment plus a
+minimal allowlisted runtime environment (`PATH`, `JAVA_HOME`, `HOME`, and locale
+keys) from `SqlclReadOnlyAdapter`.
+
+Rationale: SQLcl needs Java and basic runtime paths to execute, but it should
+not inherit database passwords, DSNs, admin credentials, or unrelated process
+environment values. Passing only runtime keys lets SQLcl find Java while
+keeping credential flow inside the redacted stdin plan.
+
+## 2026-05-18: Fake Result Explanations Stay Fixture-Scoped
+
+Decision: Runtime result explanations may be emitted for supported SH query
+plans only through explicit deterministic fake fixtures. Each explanation must
+keep `source: fake/deterministic`, `real_database_execution: false`, backend
+`fake`, fixture id, scenario id, adapter version, and no SQLcl or Oracle ADW row
+fields.
+
+Rationale: The project needs explainable end-to-end NL-to-SQL behavior before
+live execution is generally available. Fixture-scoped explanations exercise the
+trace, audit, and eval contracts without presenting demo rows as real database
+facts or opening a live execution path.
+
+## 2026-05-17: General Live ADW Queries Stay Operator-Only
+
+Decision: General working-user live read-only queries are exposed only through
+`bin/agent operator adw-query --confirm-live-adw-query`, with SQL supplied from
+one of `--sql-file`, `--sql-stdin`, or convenience `--sql`. The command
+validates read-only SQL before SQLcl verification, reuses the smoke preflight
+gates, and constructs `SqlclReadOnlyAdapter(..., allow_real_execution=True)`
+only after those gates pass.
+
+Rationale: Operators need a manual read-only query path after smoke, but normal
+agent, schema context, query planning, fake explanation, and tool paths should
+remain non-live. Keeping arbitrary SQL out of audit and omitting result rows
+from durable audit records reduces leakage risk while still giving operators a
+bounded redacted stdout result for manual verification.
+
+## 2026-05-17: AIAGENT Was Provisioned With Broad Read Privileges By Operator Request
+
+Decision: At explicit operator request, the ADW working user `AIAGENT` was
+created with `CREATE SESSION`, `DWROLE`, and `SELECT ANY TABLE`.
+
+Rationale: This is broader than the earlier least-privilege SH object-grant
+plan, but it was requested to unblock live database smoke and read-only query
+verification. Future production hardening should revisit this grant shape and
+prefer object-level grants where feasible.
+
+## 2026-05-17: Admin SQLcl Uses Bounded Subprocess Capture
+
+Decision: Operator-only admin provisioning uses the bounded SQLcl subprocess
+runner boundary instead of `subprocess.run(capture_output=True)`.
+
+Rationale: Admin setup can produce noisy SQLcl output just like read-only query
+execution. Enforcing stdout/stderr byte caps during live capture keeps memory
+usage tied to configured limits before redaction and audit serialization.
+
+## 2026-05-17: Prototype Broad Grant Profile Creates SH Private Synonyms
+
+Decision: The temporary `prototype-any-table-read` profile also creates
+private synonyms in the working schema for the SH core tables.
+
+Rationale: The current parser-less read-only SQL policy blocks schema-qualified
+dotted references, while the generated and operator-reviewed SH SQL uses
+unqualified business table names. Private synonyms let `AIAGENT` read SH data
+through names such as `sales` without loosening the SQL policy.
+
+## 2026-05-17: Admin Provisioning Classifies Before Applying DDL
+
+Decision: Operator-only ADW admin provisioning runs a metadata precheck before
+DDL, skips apply for `already_compliant`, rejects `rejected_drift` before
+unlocking or granting anything, and postchecks `created` or
+`granted_missing_privileges` repairs.
+
+Rationale: Re-running setup must not normalize a manually broadened or
+compromised working account. The operator needs a structured result that says
+whether the command created, repaired, skipped, or refused the account without
+relying on raw SQLcl output.
