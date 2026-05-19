@@ -1,4 +1,4 @@
-# AgentFromScrach
+# AgentFromScratch
 
 An incremental project to build an agent runtime from scratch, using OpenAI
 Codex concepts as a reference and applying harness engineering from the start.
@@ -34,9 +34,9 @@ behavior.
 
 Start every resumed session with:
 
-1. [docs/tracking/current-state.md](/home/opc/work/AgentFromScrach/docs/tracking/current-state.md)
-2. [docs/tracking/todo.md](/home/opc/work/AgentFromScrach/docs/tracking/todo.md)
-3. [docs/tracking/change-log.md](/home/opc/work/AgentFromScrach/docs/tracking/change-log.md)
+1. [docs/tracking/current-state.md](docs/tracking/current-state.md)
+2. [docs/tracking/todo.md](docs/tracking/todo.md)
+3. [docs/tracking/change-log.md](docs/tracking/change-log.md)
 
 ## Local Database Configuration
 

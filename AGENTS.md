@@ -1,4 +1,4 @@
-# AgentFromScrach
+# AgentFromScratch
 
 This repository is for building an agent runtime from scratch while using
 `../codex` as a reference implementation, not as code to copy blindly.

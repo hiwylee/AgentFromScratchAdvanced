@@ -12,7 +12,7 @@ Oracle ADW natural-language data access as the first domain specialization.
 
 ## Last Completed Work
 
-- Created the private GitHub repository `hiwylee/AgentFromScrach`.
+- Created the private GitHub repository `hiwylee/AgentFromScratch`.
 - Added initial harness documents, architecture notes, and product spec.
 - Fixed local `SQLCL_PATH` in `.env` to the installed SQLcl executable.
 - Added `.gitignore` rules so `.env`, Oracle wallet files, and local secret
@@ -273,6 +273,9 @@ Oracle ADW natural-language data access as the first domain specialization.
   version and every frozen case id. Drift results must include the configured
   drift fixture id, path, SHA-256 hash, and every drift case id before the gate
   can pass.
+- Renamed the GitHub repository to `hiwylee/AgentFromScratch`, updated the
+  local `origin` remote and temporary git metadata directory, and corrected
+  visible project title/link references.
 
 ## Next Action
 
@@ -389,8 +392,8 @@ deterministic non-real output and use only `FakeSqlExecutionAdapter`.
 - Check local git state with:
 
 ```bash
-git --git-dir=/tmp/AgentFromScrach.git --work-tree=/home/opc/work/AgentFromScrach status
+git --git-dir=/tmp/AgentFromScratch.git --work-tree="$PWD" status
 ```
 
-The workspace currently uses `/tmp/AgentFromScrach.git` as the git metadata
+The workspace currently uses `/tmp/AgentFromScratch.git` as the git metadata
 directory because `.git` in the worktree is a read-only mount.

@@ -7,7 +7,7 @@ direction and implementation changes, not every tiny edit.
 
 - Created the initial harness structure for building an agent runtime from
   scratch.
-- Created a private GitHub repository at `hiwylee/AgentFromScrach`.
+- Created a private GitHub repository at `hiwylee/AgentFromScratch`.
 - Added product, architecture, harness engineering, and reference-map docs.
 - Chose Oracle ADW as the first database specialization target.
 - Added secret-handling rules for `.env`, wallet files, passwords, API keys,
@@ -319,3 +319,9 @@ direction and implementation changes, not every tiny edit.
   results at the self-evolution gate. Eval results must include the manifest
   `golden_fixture` version and every frozen case id; drift results must include
   the configured drift fixture id, path, SHA-256 hash, and every drift case id.
+
+## 2026-05-19
+
+- Renamed the GitHub repository to `hiwylee/AgentFromScratch`, updated the
+  local `origin` URL and temporary git metadata directory, and corrected
+  visible project title/link references.
