@@ -261,6 +261,7 @@ class AgentLoop:
 def _english_terms_from_intent(intent_data: dict) -> list[str]:
     # 한글 쿼리에서 추출된 엔티티를 영어 동의어로 변환 — 스키마 리트리버 BM25 매칭용
     # 멀티워드 term("previous month")은 개별 단어도 추가해 단어 단위 매칭 보장
+    # 추이/trend 키워드가 있으면 시간 범위 미지정이어도 "month" 주입 (월별 분석 의미)
     from .intent import DIMENSION_KEYWORDS, METRIC_KEYWORDS, TIME_RANGE_KEYWORDS
 
     terms: list[str] = []
@@ -269,11 +270,14 @@ def _english_terms_from_intent(intent_data: dict) -> list[str]:
         terms.extend(kw for kw in METRIC_KEYWORDS.get(metric, ()) if kw.isascii())
     for dim in entities.get("dimensions", []):
         terms.extend(kw for kw in DIMENSION_KEYWORDS.get(dim, ()) if kw.isascii())
-    for time_range in entities.get("time_ranges", []):
+    time_ranges = entities.get("time_ranges", [])
+    for time_range in time_ranges:
         for kw in TIME_RANGE_KEYWORDS.get(time_range, ()):
             if kw.isascii():
                 terms.append(kw)
                 terms.extend(kw.split())
+    if not time_ranges and intent_data.get("task_type") in {"trend_analysis", "comparison"}:
+        terms.extend(["month", "monthly"])
     return list(dict.fromkeys(terms))
 
 

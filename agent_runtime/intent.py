@@ -78,7 +78,7 @@ METRIC_KEYWORDS = {
 
 DIMENSION_KEYWORDS = {
     "customer": ("고객", "customer", "client"),
-    "product": ("상품", "제품", "product", "item"),
+    "product": ("상품", "제품", "카테고리", "product", "item", "category"),
     "channel": ("채널", "channel"),
     "promotion": ("프로모션", "promotion", "promo", "campaign"),
     "region": ("지역", "region", "area"),
@@ -86,10 +86,12 @@ DIMENSION_KEYWORDS = {
 
 TIME_RANGE_KEYWORDS = {
     "previous_month": ("지난달", "전월", "previous month", "last month"),
+    "current_month": ("이번달", "금월", "this month", "current month"),
     "monthly": ("월별", "monthly", "month by month"),
     "daily": ("일별", "daily", "day by day"),
 }
 
+# 추이/trend 키워드 — 시간 범위로도 처리 (월별 시계열 분석 의미)
 TREND_KEYWORDS = ("추이", "trend", "변화", "증감")
 COMPARE_KEYWORDS = ("비교", "compare", "versus", "vs")
 AGGREGATE_KEYWORDS = ("상위", "합계", "평균", "sum", "avg", "average", "top")
