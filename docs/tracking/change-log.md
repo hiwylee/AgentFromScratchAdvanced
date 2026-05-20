@@ -24,7 +24,7 @@ direction and implementation changes, not every tiny edit.
 - Added planner/developer review notes and PM decisions. The MVP is now
   intent-first with traceability and minimal Oracle ADW read-only connectivity;
   full NL-to-SQL is explicitly later.
-- Started Milestone 1 with a uv-managed Python 3.12+ prototype. Added `agent ask`,
+- Started Milestone 1 with a uv-managed Python 3.13+ prototype. Added `agent ask`,
   structured intent analysis, trace/audit output, redaction helpers, artifact
   files, and initial `unittest` coverage.
 - Expanded Milestone 1 with core message/action/observation/final-answer types,
@@ -350,7 +350,13 @@ direction and implementation changes, not every tiny edit.
   configuration, action validation, and Responses API output parsing.
 - Corrected the Python project package name to `agent-from-scratch` and
   refreshed `uv.lock`.
-- Pinned Python to 3.13 (was 3.12) and added `pytest` as a dev dependency.
+- Pinned Python to 3.13 and added `pytest` as a dev dependency.
+- Normalized remaining documentation, runbook, tracking, and self-evolution
+  validation command references to `uv run --python 3.13`.
+- Added mandatory startup repository freshness checks to `AGENTS.md` and
+  `CLAUDE.md`: fetch remote refs when possible, compare local and upstream
+  commits, inspect local working-tree changes, and do not discard local work
+  without explicit user instruction.
 - Wired `query_plan` into `AgentLoop`: after `inspect_schema` tool succeeds,
   `_build_query_plan` is called and the result is attached to `AgentResult`;
   `_final_answer` returns the proposed SQL when `query_plan.status == "planned"`.

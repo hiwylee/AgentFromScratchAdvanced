@@ -26,7 +26,7 @@ Oracle ADW natural-language data access as the first domain specialization.
 - Ran a planner/developer review and PM reflection. The MVP is now scoped as an
   intent-first agent foundation with audit traces and minimal Oracle ADW
   read-only connectivity, not full autonomous NL-to-SQL.
-- Started Milestone 1 implementation as a uv-managed Python 3.12+ prototype:
+- Started Milestone 1 implementation as a uv-managed Python 3.13+ prototype:
   `agent ask <text>` now emits structured intent, monitorable run status,
   event output, and append-only audit records.
 - Added workflow orchestration architecture for natural-language business
@@ -303,6 +303,11 @@ Oracle ADW natural-language data access as the first domain specialization.
   supplied and ignored by git.
 - Corrected the Python project package name to `agent-from-scratch` and
   refreshed `uv.lock`.
+- Normalized Python command examples and tracking references to Python 3.13 so
+  documentation matches `pyproject.toml`.
+- Added startup repository freshness checks to `AGENTS.md` and `CLAUDE.md` so
+  future sessions must compare repo-server state, upstream commits, and local
+  worktree changes before implementation.
 
 ## Next Action
 
@@ -335,7 +340,7 @@ explanations, and default tools must not enable live execution.
 
 Recommended starting point:
 
-- uv-managed Python 3.12+ prototype first, with Rust hardening later if needed.
+- uv-managed Python 3.13+ prototype first, with Rust hardening later if needed.
 - Mock-model-first agent loop and deterministic intent heuristics for the
   initial slice.
 - Prompt, policy, memory, and eval artifacts stored as data files.
@@ -347,22 +352,31 @@ Recommended starting point:
 
 ## Last Verification
 
+Most recent Python 3.13 normalization check:
+
 ```bash
-UV_CACHE_DIR=.uv-cache uv run --python 3.12 python -m unittest tests.test_tools tests.test_runtime_controls
-UV_CACHE_DIR=.uv-cache uv run --python 3.12 python -m unittest tests.test_workflow_engine tests.test_eval_runner
-UV_CACHE_DIR=.uv-cache uv run --python 3.12 python -m unittest tests.test_oracle_adw
-UV_CACHE_DIR=.uv-cache uv run --python 3.12 python -m unittest tests.test_schema_context
-UV_CACHE_DIR=.uv-cache uv run --python 3.12 python -m unittest tests.test_sql_execution
-UV_CACHE_DIR=.uv-cache uv run --python 3.12 python -m unittest tests.test_sqlcl_runner
-UV_CACHE_DIR=.uv-cache uv run --python 3.12 python -m unittest tests.test_runtime_controls tests.test_sql_execution tests.test_sqlcl_runner tests.test_tools tests.test_oracle_adw
-UV_CACHE_DIR=.uv-cache uv run --python 3.12 python -m py_compile agent_runtime/cli.py agent_runtime/sqlcl_runner.py tests/test_runtime_controls.py tests/test_sqlcl_runner.py
-UV_CACHE_DIR=.uv-cache uv run --python 3.12 python -m py_compile agent_runtime/sqlcl_runner.py tests/test_sqlcl_runner.py
-UV_CACHE_DIR=.uv-cache uv run --python 3.12 python -m unittest tests.test_query_plan
-UV_CACHE_DIR=.uv-cache uv run --python 3.12 python -m unittest tests.test_query_plan tests.test_tools tests.test_eval_runner tests.test_result_explanation
-UV_CACHE_DIR=.uv-cache uv run --python 3.12 python -m unittest tests.test_model tests.test_cli tests.test_intent tests.test_runtime_controls
-UV_CACHE_DIR=.uv-cache uv run --python 3.12 python -m unittest discover -s tests
-UV_CACHE_DIR=.uv-cache uv run --python 3.12 python -m py_compile agent_runtime/model.py agent_runtime/cli.py agent_runtime/loop.py tests/test_model.py tests/test_cli.py
-UV_CACHE_DIR=.uv-cache uv run --python 3.12 python - <<'PY'
+UV_CACHE_DIR=.uv-cache uv run --no-dev --python 3.13 python -m unittest tests.test_self_evolution
+```
+
+Result: passed 15 tests. A default dev-dependency run attempted to fetch
+`pluggy==1.6.0` for `pytest` and was blocked by DNS/network access.
+
+```bash
+UV_CACHE_DIR=.uv-cache uv run --python 3.13 python -m unittest tests.test_tools tests.test_runtime_controls
+UV_CACHE_DIR=.uv-cache uv run --python 3.13 python -m unittest tests.test_workflow_engine tests.test_eval_runner
+UV_CACHE_DIR=.uv-cache uv run --python 3.13 python -m unittest tests.test_oracle_adw
+UV_CACHE_DIR=.uv-cache uv run --python 3.13 python -m unittest tests.test_schema_context
+UV_CACHE_DIR=.uv-cache uv run --python 3.13 python -m unittest tests.test_sql_execution
+UV_CACHE_DIR=.uv-cache uv run --python 3.13 python -m unittest tests.test_sqlcl_runner
+UV_CACHE_DIR=.uv-cache uv run --python 3.13 python -m unittest tests.test_runtime_controls tests.test_sql_execution tests.test_sqlcl_runner tests.test_tools tests.test_oracle_adw
+UV_CACHE_DIR=.uv-cache uv run --python 3.13 python -m py_compile agent_runtime/cli.py agent_runtime/sqlcl_runner.py tests/test_runtime_controls.py tests/test_sqlcl_runner.py
+UV_CACHE_DIR=.uv-cache uv run --python 3.13 python -m py_compile agent_runtime/sqlcl_runner.py tests/test_sqlcl_runner.py
+UV_CACHE_DIR=.uv-cache uv run --python 3.13 python -m unittest tests.test_query_plan
+UV_CACHE_DIR=.uv-cache uv run --python 3.13 python -m unittest tests.test_query_plan tests.test_tools tests.test_eval_runner tests.test_result_explanation
+UV_CACHE_DIR=.uv-cache uv run --python 3.13 python -m unittest tests.test_model tests.test_cli tests.test_intent tests.test_runtime_controls
+UV_CACHE_DIR=.uv-cache uv run --python 3.13 python -m unittest discover -s tests
+UV_CACHE_DIR=.uv-cache uv run --python 3.13 python -m py_compile agent_runtime/model.py agent_runtime/cli.py agent_runtime/loop.py tests/test_model.py tests/test_cli.py
+UV_CACHE_DIR=.uv-cache uv run --python 3.13 python - <<'PY'
 from pathlib import Path
 from agent_runtime.schema_context import load_schema_artifacts, build_compact_schema_context
 root = Path('docs/generated/schema-context')
@@ -403,7 +417,7 @@ deterministic non-real output and use only `FakeSqlExecutionAdapter`.
 ## Open Questions
 
 - Should the first implementation be Rust-only, or Rust core plus a TypeScript
-  or Python helper layer? Decided: Python 3.12+ prototype first through `uv`.
+  or Python helper layer? Decided: Python 3.13+ prototype first through `uv`.
 - Should Oracle ADW execution use SQLcl subprocesses first or a direct Oracle
   driver? Current design path: backend-neutral SQL execution adapter first,
   with SQLcl as the first adapter-gated subprocess implementation. Direct

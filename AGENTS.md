@@ -26,6 +26,16 @@ This repository is for building an agent runtime from scratch while using
 
 ## Working Rules
 
+- Before starting implementation, run a repository sync check against the repo
+  server and local worktree. Fetch the remote tracking refs when network access
+  is available, then compare local `HEAD`, upstream, and the working tree before
+  editing. At minimum check:
+  `git fetch --prune origin`, `git status --short --branch`,
+  `git log --oneline @{u}..HEAD`, and `git log --oneline HEAD..@{u}`.
+- If the repo server cannot be reached, record that the remote freshness check
+  is blocked and continue only with the local `git status --short --branch`
+  result clearly stated. Never overwrite, reset, or discard local changes just
+  to match the server unless the user explicitly requests it.
 - Keep early implementations boring and observable.
 - Do not introduce a framework until the plain version exposes real pressure.
 - Every milestone should have a runnable command and a focused verification path.

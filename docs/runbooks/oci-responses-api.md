@@ -148,12 +148,12 @@ future OCI endpoint behavior can work without the compatibility fallback.
 Focused tests:
 
 ```bash
-UV_CACHE_DIR=.uv-cache uv run --python 3.12 python -m unittest tests.test_model tests.test_cli tests.test_intent tests.test_runtime_controls
+UV_CACHE_DIR=.uv-cache uv run --python 3.13 python -m unittest tests.test_model tests.test_cli tests.test_intent tests.test_runtime_controls
 ```
 
 Full suite:
 
 ```bash
-UV_CACHE_DIR=.uv-cache uv run --python 3.12 python -m unittest discover -s tests
+UV_CACHE_DIR=.uv-cache uv run --python 3.13 python -m unittest discover -s tests
 ```
 

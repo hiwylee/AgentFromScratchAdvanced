@@ -15,10 +15,10 @@ bin/agent status --run-dir /tmp/afs-runs
 bin/agent workflow "이번달 특허자산 대체 등록 진행해줘" --run-dir /tmp/afs-wf --audit-log /tmp/afs-wf.jsonl
 
 # Run all tests
-UV_CACHE_DIR=.uv-cache uv run --python 3.12 python -m unittest discover -s tests
+UV_CACHE_DIR=.uv-cache uv run --python 3.13 python -m unittest discover -s tests
 
 # Run a single test module
-UV_CACHE_DIR=.uv-cache uv run --python 3.12 python -m unittest tests.test_tools
+UV_CACHE_DIR=.uv-cache uv run --python 3.13 python -m unittest tests.test_tools
 
 # Operator-only live ADW commands (require explicit --confirm-* flag)
 bin/agent operator adw-smoke --confirm-live-adw-smoke
@@ -28,7 +28,21 @@ bin/agent operator adw-provision-working-user --grant-profile prototype-any-tabl
 
 ## Resume
 
-Start every session by reading:
+Start every session by checking repository freshness before editing:
+
+```bash
+git fetch --prune origin
+git status --short --branch
+git log --oneline @{u}..HEAD
+git log --oneline HEAD..@{u}
+```
+
+If `git fetch` cannot reach the repo server, state that the remote freshness
+check is blocked and use `git status --short --branch` as the local baseline.
+Do not reset, overwrite, or discard local changes unless the user explicitly
+requests it.
+
+Then read:
 1. `docs/tracking/current-state.md`
 2. `docs/tracking/todo.md`
 3. `docs/tracking/change-log.md`

@@ -290,7 +290,7 @@ def _rollback_payload():
             }
         ],
         "validation_commands": [
-            "UV_CACHE_DIR=.uv-cache uv run --python 3.12 python -m unittest discover -s tests"
+            "UV_CACHE_DIR=.uv-cache uv run --python 3.13 python -m unittest discover -s tests"
         ],
         "notes": "Restore the previous prompt artifact and rerun frozen evals.",
     }

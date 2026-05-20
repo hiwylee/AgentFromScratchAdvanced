@@ -5,7 +5,7 @@ it after `docs/tracking/current-state.md` and before starting new work.
 
 ## Execution Rules
 
-- Use uv-managed Python 3.12+ for all local verification.
+- Use uv-managed Python 3.13+ for all local verification.
 - Keep `.env`, wallet files, passwords, and rendered credential strings out of
   logs, tests, docs, commits, and worker messages.
 - Run parallel workers only on disjoint write scopes.
@@ -390,12 +390,12 @@ Choose the next Milestone 7 hardening slice:
 ## Verification Commands
 
 ```bash
-UV_CACHE_DIR=.uv-cache uv run --python 3.12 python -m unittest tests.test_tools tests.test_runtime_controls
-UV_CACHE_DIR=.uv-cache uv run --python 3.12 python -m unittest tests.test_workflow_engine tests.test_eval_runner
-UV_CACHE_DIR=.uv-cache uv run --python 3.12 python -m unittest tests.test_oracle_adw
-UV_CACHE_DIR=.uv-cache uv run --python 3.12 python -m unittest tests.test_schema_context
-UV_CACHE_DIR=.uv-cache uv run --python 3.12 python -m unittest tests.test_sql_execution
-UV_CACHE_DIR=.uv-cache uv run --python 3.12 python -m unittest tests.test_sqlcl_runner
-UV_CACHE_DIR=.uv-cache uv run --python 3.12 python -m unittest tests.test_query_plan
-UV_CACHE_DIR=.uv-cache uv run --python 3.12 python -m unittest discover -s tests
+UV_CACHE_DIR=.uv-cache uv run --python 3.13 python -m unittest tests.test_tools tests.test_runtime_controls
+UV_CACHE_DIR=.uv-cache uv run --python 3.13 python -m unittest tests.test_workflow_engine tests.test_eval_runner
+UV_CACHE_DIR=.uv-cache uv run --python 3.13 python -m unittest tests.test_oracle_adw
+UV_CACHE_DIR=.uv-cache uv run --python 3.13 python -m unittest tests.test_schema_context
+UV_CACHE_DIR=.uv-cache uv run --python 3.13 python -m unittest tests.test_sql_execution
+UV_CACHE_DIR=.uv-cache uv run --python 3.13 python -m unittest tests.test_sqlcl_runner
+UV_CACHE_DIR=.uv-cache uv run --python 3.13 python -m unittest tests.test_query_plan
+UV_CACHE_DIR=.uv-cache uv run --python 3.13 python -m unittest discover -s tests
 ```

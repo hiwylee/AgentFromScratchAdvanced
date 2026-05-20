@@ -21,7 +21,7 @@
 
 ## Implementation Decisions
 
-- `[x]` Choose primary runtime language: uv-managed Python 3.12+ prototype first,
+- `[x]` Choose primary runtime language: uv-managed Python 3.13+ prototype first,
   Rust hardening later if needed.
 - `[x]` Choose first CLI command shape: `agent ask <text>`.
 - `[x]` Choose mock-model-first versus API-model-first sequencing.
@@ -50,7 +50,7 @@
 - `[x]` Add token, cost, row, and latency budget placeholders.
 - `[x]` Add focused tests for intent and redaction behavior.
 - `[x]` Add a CLI entry point for structured intent analysis.
-- `[x]` Verify the prototype through `uv run --python 3.12`.
+- `[x]` Verify the prototype through `uv run --python 3.13`.
 - `[x]` Add monitorable run status via `agent status`.
 
 Acceptance criteria:
