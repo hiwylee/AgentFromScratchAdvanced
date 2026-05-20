@@ -365,3 +365,12 @@ direction and implementation changes, not every tiny edit.
 - Updated golden eval fixtures for `korean_database_trend` and
   `sh_revenue_product_month_schema_context` to expect SQL output instead of
   clarification-only responses. 183 tests pass.
+- Expanded Korean keyword coverage in `intent.py`:
+  - `DIMENSION_KEYWORDS["product"]`: added `"카테고리"`, `"category"`
+  - `TIME_RANGE_KEYWORDS`: added `current_month` entry (`"이번달"`, `"금월"`,
+    `"this month"`, `"current month"`)
+- Added trend-implied month injection in `_english_terms_from_intent`: when
+  `task_type` is `trend_analysis` or `comparison` and no time range is specified,
+  `"month"` and `"monthly"` are injected so pattern matching succeeds for
+  queries like "추이 분석해줘".
+- Added `CLAUDE.md` with project guidance and added `.omc/` to `.gitignore`.
