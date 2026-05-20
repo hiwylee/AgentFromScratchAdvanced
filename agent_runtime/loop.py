@@ -11,6 +11,8 @@ from .audit import RunRecord, append_audit
 from .intent import analyze_user_intent
 from .model import ActionModel, MockModel, ModelInvocationError
 from .monitor import RunMonitor
+from .query_plan import QueryPlanArtifact, build_query_plan_from_context
+from .schema_context import build_compact_schema_context, load_schema_artifacts
 from .tools import (
     ToolCall,
     ToolExecutionContext,
@@ -19,6 +21,15 @@ from .tools import (
     default_tool_registry,
 )
 from .types import Action, Budget, CancellationToken, FinalAnswer, Message, Observation, RunState
+
+# 스키마 아티팩트 경로 — query_plan 빌드에 필요한 메타데이터 및 큐레이션 시드
+_PROJECT_ROOT = Path(__file__).parent.parent
+_SCHEMA_METADATA_PATH = (
+    _PROJECT_ROOT / "docs/generated/schema-context/oracle_adw_sh.schema-metadata.v1.json"
+)
+_CURATED_SEED_PATH = (
+    _PROJECT_ROOT / "docs/generated/schema-context/oracle_adw_sh.curated-seed.v1.json"
+)
 
 
 @dataclass(frozen=True)
@@ -31,8 +42,10 @@ class AgentResult:
     events_path: str
     audit_path: str
 
+    query_plan: dict[str, object] | None = None
+
     def to_dict(self) -> dict[str, object]:
-        return {
+        result: dict[str, object] = {
             "run_id": self.run_id,
             "intent": self.intent,
             "action": self.action,
@@ -41,6 +54,9 @@ class AgentResult:
             "events_path": self.events_path,
             "audit_path": self.audit_path,
         }
+        if self.query_plan is not None:
+            result["query_plan"] = self.query_plan
+        return result
 
 
 class AgentLoop:
@@ -137,6 +153,7 @@ class AgentLoop:
             return self._finish_stopped(monitor, intent_data, action, state, reason)
 
         tool_call = _tool_call_for_action(action, user_text=user_text, registry=self.tool_registry)
+        query_plan: QueryPlanArtifact | None = None
         if tool_call is not None:
             stopped = self._stop_state(started, action_steps_used, token, check_max_steps=True)
             if stopped is not None:
@@ -154,6 +171,12 @@ class AgentLoop:
                 source=f"tool:{tool_result.tool_name}",
                 content={"tool_result": tool_result.to_dict()},
             )
+            # 스키마 검사 성공 후 쿼리 플랜 생성 — SQL 제안 및 정책 검증 포함
+            if action.kind == "inspect_schema" and tool_result.state == "completed":
+                query_plan = _build_query_plan(user_text)
+                if query_plan is not None:
+                    monitor.event("query_plan_built", {"query_plan": query_plan.to_dict()})
+                    self._audit(run_id, "query_plan_built", {"query_plan": query_plan.to_dict()})
         else:
             observation = Observation(
                 source="mock_runtime",
@@ -169,10 +192,10 @@ class AgentLoop:
             state, reason = stopped
             return self._finish_stopped(monitor, intent_data, action, state, reason)
 
-        final = _final_answer(action)
+        final = _final_answer(action, query_plan=query_plan)
         monitor.finish("completed", {"final_answer": final.to_dict()})
         self._audit(run_id, "run_completed", {"final_answer": final.to_dict()})
-        return self._result(monitor, intent_data, action.to_dict(), final)
+        return self._result(monitor, intent_data, action.to_dict(), final, query_plan=query_plan)
 
     def _stop_state(
         self,
@@ -221,6 +244,7 @@ class AgentLoop:
         intent: dict[str, object],
         action: dict[str, object],
         final: FinalAnswer,
+        query_plan: QueryPlanArtifact | None = None,
     ) -> AgentResult:
         return AgentResult(
             run_id=monitor.run_id,
@@ -230,10 +254,21 @@ class AgentLoop:
             status_path=str(monitor.status_path),
             events_path=str(monitor.events_path),
             audit_path=str(self.audit_path),
+            query_plan=query_plan.to_dict() if query_plan is not None else None,
         )
 
 
-def _final_answer(action: Action) -> FinalAnswer:
+def _build_query_plan(user_text: str) -> QueryPlanArtifact | None:
+    # 예외 발생 시 None 반환 — 쿼리 플랜 실패가 전체 실행을 중단시키지 않도록 격리
+    try:
+        artifacts = load_schema_artifacts(_SCHEMA_METADATA_PATH, _CURATED_SEED_PATH)
+        compact = build_compact_schema_context(artifacts, request_text=user_text)
+        return build_query_plan_from_context(compact, request_text=user_text)
+    except Exception:
+        return None
+
+
+def _final_answer(action: Action, *, query_plan: QueryPlanArtifact | None = None) -> FinalAnswer:
     if action.kind == "refuse":
         return FinalAnswer(
             content="I cannot proceed with a write or destructive database request in the current read-only mode.",
@@ -247,6 +282,18 @@ def _final_answer(action: Action) -> FinalAnswer:
             next_action="Inspect Oracle ADW schema context, then ask a clarification question if ambiguity remains.",
         )
     if action.kind == "inspect_schema":
+        if query_plan is not None and query_plan.status == "planned":
+            return FinalAnswer(
+                content=f"Query plan ready. Proposed SQL:\n{query_plan.proposed_sql}",
+                assumptions=list(query_plan.assumptions),
+                next_action="SQL is policy-validated and ready for review. Use adw-query to execute.",
+            )
+        if query_plan is not None:
+            return FinalAnswer(
+                content=f"Schema inspected. Query plan status: {query_plan.status}. {query_plan.refusal_reason or ''}",
+                assumptions=list(query_plan.assumptions),
+                next_action="Refine the request to match a supported pattern: revenue by product/channel/promotion by month.",
+            )
         return FinalAnswer(
             content="The next safe step is to inspect Oracle ADW schema context.",
             assumptions=["The request can remain read-only."],

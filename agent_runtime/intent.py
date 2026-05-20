@@ -144,7 +144,15 @@ def analyze_user_intent(text: str) -> UserIntent:
             next_action="select_workflow_template",
         )
 
-    requires_db = any(keyword in normalized for keyword in DB_KEYWORDS)
+    # DB_KEYWORDS 직접 매칭 외에, 지표(metric)+차원(dimension) 또는 시간(time) 조합도
+    # 데이터 분석 쿼리로 인식 — "show last month revenue by product" 같은 영문 패턴 처리
+    metric_terms = [kw for kws in METRIC_KEYWORDS.values() for kw in kws]
+    dimension_terms = [kw for kws in DIMENSION_KEYWORDS.values() for kw in kws]
+    time_terms = [kw for kws in TIME_RANGE_KEYWORDS.values() for kw in kws]
+    requires_db = any(keyword in normalized for keyword in DB_KEYWORDS) or (
+        any(keyword in normalized for keyword in metric_terms)
+        and any(keyword in normalized for keyword in dimension_terms + time_terms)
+    )
     unsafe_write = any(keyword in normalized for keyword in WRITE_KEYWORDS)
 
     if not requires_db:
