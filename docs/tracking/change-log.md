@@ -350,3 +350,18 @@ direction and implementation changes, not every tiny edit.
   configuration, action validation, and Responses API output parsing.
 - Corrected the Python project package name to `agent-from-scratch` and
   refreshed `uv.lock`.
+- Pinned Python to 3.13 (was 3.12) and added `pytest` as a dev dependency.
+- Wired `query_plan` into `AgentLoop`: after `inspect_schema` tool succeeds,
+  `_build_query_plan` is called and the result is attached to `AgentResult`;
+  `_final_answer` returns the proposed SQL when `query_plan.status == "planned"`.
+- Fixed intent classifier to recognize English metric+dimension/time patterns
+  ("show last month revenue by product") by also matching against
+  `METRIC_KEYWORDS` and `DIMENSION_KEYWORDS` values, not just `DB_KEYWORDS`.
+- Added Korean query support: `_english_terms_from_intent` extracts English
+  synonyms from intent entities and passes them as `request_terms` to the schema
+  retriever. Multi-word time terms ("previous month") are split so "month" matches
+  `_has_month_term`. Both `inspect_schema` and `ask_clarification` actions now
+  trigger query plan generation.
+- Updated golden eval fixtures for `korean_database_trend` and
+  `sh_revenue_product_month_schema_context` to expect SQL output instead of
+  clarification-only responses. 183 tests pass.
