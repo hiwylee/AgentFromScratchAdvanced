@@ -3,7 +3,7 @@ name = "agent-from-scrach"
 version = "0.1.0"
 description = "Intent-first agent runtime prototype with Oracle ADW specialization"
 readme = "README.md"
-requires-python = ">=3.12"
+requires-python = ">=3.13"
 dependencies = []
 
 [tool.uv]
