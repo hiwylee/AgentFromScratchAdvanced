@@ -158,19 +158,32 @@ def _select_query_pattern(
         ),
     ):
         return None
+    has_day = _has_day_term(terms)
+    has_month = _has_month_term(terms)
     if _has_promotion_term(terms):
-        if _has_revenue_term(terms) and _has_month_term(terms):
-            return _revenue_by_promotion_month_pattern(
-                use_subcategory=_has_promotion_subcategory_term(terms)
-            )
+        if _has_revenue_term(terms):
+            if has_day:
+                return _revenue_by_promotion_day_pattern(
+                    use_subcategory=_has_promotion_subcategory_term(terms)
+                )
+            if has_month:
+                return _revenue_by_promotion_month_pattern(
+                    use_subcategory=_has_promotion_subcategory_term(terms)
+                )
         return None
     if _has_any_term(terms, ("channel", "channels", "sales channel", "route to market")):
-        if _has_revenue_term(terms) and _has_month_term(terms):
-            return _revenue_by_channel_month_pattern()
+        if _has_revenue_term(terms):
+            if has_day:
+                return _revenue_by_channel_day_pattern()
+            if has_month:
+                return _revenue_by_channel_month_pattern()
         return None
     if _has_any_term(terms, ("product", "products", "product category", "category")):
-        if _has_revenue_term(terms) and _has_month_term(terms):
-            return _revenue_by_product_month_pattern()
+        if _has_revenue_term(terms):
+            if has_day:
+                return _revenue_by_product_day_pattern()
+            if has_month:
+                return _revenue_by_product_month_pattern()
         return None
     return None
 
@@ -206,6 +219,10 @@ def _has_revenue_term(terms: set[str]) -> bool:
 
 def _has_month_term(terms: set[str]) -> bool:
     return _has_any_term(terms, ("month", "monthly", "calendar month"))
+
+
+def _has_day_term(terms: set[str]) -> bool:
+    return _has_any_term(terms, ("day", "daily", "calendar date", "일별", "일"))
 
 
 def _has_promotion_term(terms: set[str]) -> bool:
@@ -325,6 +342,81 @@ def _revenue_by_promotion_month_pattern(*, use_subcategory: bool = False) -> dic
     }
 
 
+def _revenue_by_product_day_pattern() -> dict[str, Any]:
+    return {
+        "label": "revenue/product/day",
+        "required_tables": {"SH.SALES", "SH.PRODUCTS", "SH.TIMES"},
+        "sql": _revenue_by_product_day_sql(),
+        "assumptions": (
+            "Revenue maps to SUM(SALES.AMOUNT_SOLD) from the curated SH glossary.",
+            "Product grouping uses PRODUCTS.PROD_CATEGORY.",
+            "Day grouping uses TIMES.TIME_ID (DATE).",
+            "No date filter is applied until the request supplies a concrete period.",
+            "The proposed SQL is not executed in this milestone.",
+        ),
+        "dimensions": (
+            {"table_id": "SH.TIMES", "column": "TIME_ID", "alias": "day"},
+            {"table_id": "SH.PRODUCTS", "column": "PROD_CATEGORY", "alias": "product_category"},
+        ),
+        "measures": (_revenue_measure(),),
+        "joins": (
+            {"from_table_id": "SH.SALES", "from_column": "PROD_ID", "to_table_id": "SH.PRODUCTS", "to_column": "PROD_ID"},
+            _sales_time_join(),
+        ),
+    }
+
+
+def _revenue_by_channel_day_pattern() -> dict[str, Any]:
+    return {
+        "label": "revenue/channel/day",
+        "required_tables": {"SH.SALES", "SH.CHANNELS", "SH.TIMES"},
+        "sql": _revenue_by_channel_day_sql(),
+        "assumptions": (
+            "Revenue maps to SUM(SALES.AMOUNT_SOLD) from the curated SH glossary.",
+            "Channel grouping uses CHANNELS.CHANNEL_DESC.",
+            "Day grouping uses TIMES.TIME_ID (DATE).",
+            "No date filter is applied until the request supplies a concrete period.",
+            "The proposed SQL is not executed in this milestone.",
+        ),
+        "dimensions": (
+            {"table_id": "SH.TIMES", "column": "TIME_ID", "alias": "day"},
+            {"table_id": "SH.CHANNELS", "column": "CHANNEL_DESC", "alias": "channel"},
+        ),
+        "measures": (_revenue_measure(),),
+        "joins": (
+            {"from_table_id": "SH.SALES", "from_column": "CHANNEL_ID", "to_table_id": "SH.CHANNELS", "to_column": "CHANNEL_ID"},
+            _sales_time_join(),
+        ),
+    }
+
+
+def _revenue_by_promotion_day_pattern(*, use_subcategory: bool = False) -> dict[str, Any]:
+    promo_column = "PROMO_SUBCATEGORY" if use_subcategory else "PROMO_CATEGORY"
+    promo_alias = "promotion_subcategory" if use_subcategory else "promotion_category"
+    promo_grain = "subcategory" if use_subcategory else "category"
+    return {
+        "label": "revenue/promotion/day",
+        "required_tables": {"SH.SALES", "SH.PROMOTIONS", "SH.TIMES"},
+        "sql": _revenue_by_promotion_day_sql(promo_column=promo_column, promo_alias=promo_alias),
+        "assumptions": (
+            "Revenue maps to SUM(SALES.AMOUNT_SOLD) from the curated SH glossary.",
+            f"Promotion grouping uses PROMOTIONS.{promo_column} because the request asks for promotion {promo_grain}.",
+            "Day grouping uses TIMES.TIME_ID (DATE).",
+            "No date filter is applied until the request supplies a concrete period.",
+            "The proposed SQL is not executed in this milestone.",
+        ),
+        "dimensions": (
+            {"table_id": "SH.TIMES", "column": "TIME_ID", "alias": "day"},
+            {"table_id": "SH.PROMOTIONS", "column": promo_column, "alias": promo_alias},
+        ),
+        "measures": (_revenue_measure(),),
+        "joins": (
+            {"from_table_id": "SH.SALES", "from_column": "PROMO_ID", "to_table_id": "SH.PROMOTIONS", "to_column": "PROMO_ID"},
+            _sales_time_join(),
+        ),
+    }
+
+
 def _revenue_by_product_month_sql() -> str:
     return "\n".join(
         (
@@ -371,6 +463,48 @@ def _revenue_by_promotion_month_sql(*, promo_column: str, promo_alias: str) -> s
             f"ORDER BY t.CALENDAR_MONTH_DESC, pr.{promo_column}",
         )
     )
+
+
+def _revenue_by_product_day_sql() -> str:
+    return "\n".join((
+        "SELECT",
+        "  t.TIME_ID AS day,",
+        "  p.PROD_CATEGORY AS product_category,",
+        "  SUM(s.AMOUNT_SOLD) AS revenue",
+        "FROM SALES s",
+        "JOIN PRODUCTS p ON s.PROD_ID = p.PROD_ID",
+        "JOIN TIMES t ON s.TIME_ID = t.TIME_ID",
+        "GROUP BY t.TIME_ID, p.PROD_CATEGORY",
+        "ORDER BY t.TIME_ID, p.PROD_CATEGORY",
+    ))
+
+
+def _revenue_by_channel_day_sql() -> str:
+    return "\n".join((
+        "SELECT",
+        "  t.TIME_ID AS day,",
+        "  c.CHANNEL_DESC AS channel,",
+        "  SUM(s.AMOUNT_SOLD) AS revenue",
+        "FROM SALES s",
+        "JOIN CHANNELS c ON s.CHANNEL_ID = c.CHANNEL_ID",
+        "JOIN TIMES t ON s.TIME_ID = t.TIME_ID",
+        "GROUP BY t.TIME_ID, c.CHANNEL_DESC",
+        "ORDER BY t.TIME_ID, c.CHANNEL_DESC",
+    ))
+
+
+def _revenue_by_promotion_day_sql(*, promo_column: str, promo_alias: str) -> str:
+    return "\n".join((
+        "SELECT",
+        "  t.TIME_ID AS day,",
+        f"  pr.{promo_column} AS {promo_alias},",
+        "  SUM(s.AMOUNT_SOLD) AS revenue",
+        "FROM SALES s",
+        "JOIN PROMOTIONS pr ON s.PROMO_ID = pr.PROMO_ID",
+        "JOIN TIMES t ON s.TIME_ID = t.TIME_ID",
+        f"GROUP BY t.TIME_ID, pr.{promo_column}",
+        f"ORDER BY t.TIME_ID, pr.{promo_column}",
+    ))
 
 
 def _revenue_measure() -> dict[str, str]:
