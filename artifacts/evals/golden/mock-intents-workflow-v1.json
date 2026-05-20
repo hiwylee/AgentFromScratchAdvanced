@@ -62,7 +62,7 @@
           "kind": "ask_clarification"
         },
         "final_answer": {
-          "next_action": "Inspect Oracle ADW schema context, then ask a clarification question if ambiguity remains."
+          "next_action": "SQL is policy-validated and ready for review. Use adw-query to execute."
         }
       }
     },
@@ -106,11 +106,7 @@
           }
         },
         "final_answer": {
-          "content": "I need schema or business glossary context before building a query plan.",
-          "assumptions": [
-            "No SQL should be generated before intent and schema context are resolved."
-          ],
-          "next_action": "Inspect Oracle ADW schema context, then ask a clarification question if ambiguity remains."
+          "next_action": "SQL is policy-validated and ready for review. Use adw-query to execute."
         },
         "trace_events": [
           {

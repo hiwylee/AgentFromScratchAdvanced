@@ -152,7 +152,7 @@ class AgentLoop:
             state, reason = stopped
             return self._finish_stopped(monitor, intent_data, action, state, reason)
 
-        tool_call = _tool_call_for_action(action, user_text=user_text, registry=self.tool_registry)
+        tool_call = _tool_call_for_action(action, user_text=user_text, registry=self.tool_registry, intent_data=intent_data)
         query_plan: QueryPlanArtifact | None = None
         if tool_call is not None:
             stopped = self._stop_state(started, action_steps_used, token, check_max_steps=True)
@@ -171,9 +171,9 @@ class AgentLoop:
                 source=f"tool:{tool_result.tool_name}",
                 content={"tool_result": tool_result.to_dict()},
             )
-            # 스키마 검사 성공 후 쿼리 플랜 생성 — SQL 제안 및 정책 검증 포함
-            if action.kind == "inspect_schema" and tool_result.state == "completed":
-                query_plan = _build_query_plan(user_text)
+            # 스키마 검사/명확화 성공 후 쿼리 플랜 생성 — ask_clarification도 포함
+            if action.kind in {"inspect_schema", "ask_clarification"} and tool_result.state == "completed":
+                query_plan = _build_query_plan(user_text, intent_data=intent_data)
                 if query_plan is not None:
                     monitor.event("query_plan_built", {"query_plan": query_plan.to_dict()})
                     self._audit(run_id, "query_plan_built", {"query_plan": query_plan.to_dict()})
@@ -258,11 +258,31 @@ class AgentLoop:
         )
 
 
-def _build_query_plan(user_text: str) -> QueryPlanArtifact | None:
+def _english_terms_from_intent(intent_data: dict) -> list[str]:
+    # 한글 쿼리에서 추출된 엔티티를 영어 동의어로 변환 — 스키마 리트리버 BM25 매칭용
+    # 멀티워드 term("previous month")은 개별 단어도 추가해 단어 단위 매칭 보장
+    from .intent import DIMENSION_KEYWORDS, METRIC_KEYWORDS, TIME_RANGE_KEYWORDS
+
+    terms: list[str] = []
+    entities = intent_data.get("entities", {})
+    for metric in entities.get("metrics", []):
+        terms.extend(kw for kw in METRIC_KEYWORDS.get(metric, ()) if kw.isascii())
+    for dim in entities.get("dimensions", []):
+        terms.extend(kw for kw in DIMENSION_KEYWORDS.get(dim, ()) if kw.isascii())
+    for time_range in entities.get("time_ranges", []):
+        for kw in TIME_RANGE_KEYWORDS.get(time_range, ()):
+            if kw.isascii():
+                terms.append(kw)
+                terms.extend(kw.split())
+    return list(dict.fromkeys(terms))
+
+
+def _build_query_plan(user_text: str, *, intent_data: dict | None = None) -> QueryPlanArtifact | None:
     # 예외 발생 시 None 반환 — 쿼리 플랜 실패가 전체 실행을 중단시키지 않도록 격리
     try:
         artifacts = load_schema_artifacts(_SCHEMA_METADATA_PATH, _CURATED_SEED_PATH)
-        compact = build_compact_schema_context(artifacts, request_text=user_text)
+        request_terms = _english_terms_from_intent(intent_data) if intent_data else []
+        compact = build_compact_schema_context(artifacts, request_text=user_text, request_terms=request_terms)
         return build_query_plan_from_context(compact, request_text=user_text)
     except Exception:
         return None
@@ -276,6 +296,13 @@ def _final_answer(action: Action, *, query_plan: QueryPlanArtifact | None = None
             next_action="Ask a read-only analysis question or request an explicit safe alternative.",
         )
     if action.kind == "ask_clarification":
+        # 스키마 검사 후 쿼리 플랜이 생성됐으면 SQL 반환 (한글 쿼리 포함)
+        if query_plan is not None and query_plan.status == "planned":
+            return FinalAnswer(
+                content=f"Query plan ready. Proposed SQL:\n{query_plan.proposed_sql}",
+                assumptions=list(query_plan.assumptions),
+                next_action="SQL is policy-validated and ready for review. Use adw-query to execute.",
+            )
         return FinalAnswer(
             content="I need schema or business glossary context before building a query plan.",
             assumptions=["No SQL should be generated before intent and schema context are resolved."],
@@ -325,6 +352,7 @@ def _tool_call_for_action(
     *,
     user_text: str,
     registry: ToolRegistry,
+    intent_data: dict | None = None,
 ) -> ToolCall | None:
     if action.kind not in {"inspect_schema", "ask_clarification"}:
         return None
