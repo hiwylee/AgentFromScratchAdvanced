@@ -276,6 +276,33 @@ Oracle ADW natural-language data access as the first domain specialization.
 - Renamed the GitHub repository to `hiwylee/AgentFromScratch`, updated the
   local `origin` remote and temporary git metadata directory, and corrected
   visible project title/link references.
+- Added optional live LLM action planning through OpenAI Responses API. The
+  default remains deterministic mock mode; `agent ask --model-provider openai`
+  requires `OPENAI_API_KEY`, uses `OPENAI_MODEL` or `gpt-5.2`, validates returned
+  action kinds against the local safety baseline, and does not enable live ADW
+  execution or workflow writes.
+- Added `oci` as a separate OpenAI-compatible provider. `agent ask` can now use
+  `--model-provider oci` or `LLM=oci`, reading `OCI_BASE_URL`, `OCI_API_KEY` or
+  `OCI_API_KEY_2`, and `OCI_MODEL`. The local `.env` is configured for OCI
+  provider selection and `xai.grok-4-1-fast-non-reasoning` without printing key
+  values.
+- OCI live smoke now reaches the configured endpoint with the `OpenAI-Project`
+  header derived from `OCI_PROJECT_OCID`, but both configured OCI API keys
+  return `404 Authorization failed or requested resource not found`. This
+  suggests project OCID, endpoint region, model availability, or API-key
+  authorization mismatch rather than missing local env wiring.
+- Reflected Oracle docs by keeping the documented OCI `/openai/v1` Responses
+  API path and adding an API-key fallback to `/20231130/actions/v1/responses`
+  after OCI 404 responses. The OCI live smoke now succeeds with
+  `xai.grok-4-1-fast-non-reasoning`, returning a locally validated
+  `final_answer` action with `model_provider: oci`.
+- Added `docs/runbooks/oci-responses-api.md` as the operator runbook for OCI
+  Responses API setup, smoke testing, fallback behavior, and troubleshooting.
+- Added non-secret OpenAI configuration placeholders to local `.env` and
+  tracked `.env.example`; the real `OPENAI_API_KEY` value remains operator
+  supplied and ignored by git.
+- Corrected the Python project package name to `agent-from-scratch` and
+  refreshed `uv.lock`.
 
 ## Next Action
 
@@ -283,6 +310,12 @@ Next implementation focus moves past the first Milestone 7 control boundary:
 
 - decide whether to add an operator-only command for recording improvement
   candidates, or keep candidate creation fixture/manual-only for another wave;
+- optionally run a live LLM smoke after setting `OPENAI_API_KEY`:
+
+```bash
+bin/agent ask "hello" --model-provider openai --run-dir /tmp/afs-llm-smoke --audit-log /tmp/afs-llm-smoke.jsonl
+```
+
 - add JSON Schema files for the self-evolution artifacts if external producers
   will write them directly;
 - broaden drift fixtures only after a concrete prompt, policy, or memory change
@@ -326,7 +359,9 @@ UV_CACHE_DIR=.uv-cache uv run --python 3.12 python -m py_compile agent_runtime/c
 UV_CACHE_DIR=.uv-cache uv run --python 3.12 python -m py_compile agent_runtime/sqlcl_runner.py tests/test_sqlcl_runner.py
 UV_CACHE_DIR=.uv-cache uv run --python 3.12 python -m unittest tests.test_query_plan
 UV_CACHE_DIR=.uv-cache uv run --python 3.12 python -m unittest tests.test_query_plan tests.test_tools tests.test_eval_runner tests.test_result_explanation
+UV_CACHE_DIR=.uv-cache uv run --python 3.12 python -m unittest tests.test_model tests.test_cli tests.test_intent tests.test_runtime_controls
 UV_CACHE_DIR=.uv-cache uv run --python 3.12 python -m unittest discover -s tests
+UV_CACHE_DIR=.uv-cache uv run --python 3.12 python -m py_compile agent_runtime/model.py agent_runtime/cli.py agent_runtime/loop.py tests/test_model.py tests/test_cli.py
 UV_CACHE_DIR=.uv-cache uv run --python 3.12 python - <<'PY'
 from pathlib import Path
 from agent_runtime.schema_context import load_schema_artifacts, build_compact_schema_context
@@ -343,16 +378,24 @@ bin/agent ask "지난달 상품별 매출 추이를 보여줘" --run-dir /tmp/af
 bin/agent ask "고객 테이블에서 오래된 데이터를 삭제해줘" --run-dir /tmp/afs-runs-2 --audit-log /tmp/afs-audit-2.jsonl
 bin/agent ask "이번달 특허자산 대체 등록 진행해줘" --run-dir /tmp/afs-workflow-intent2 --audit-log /tmp/afs-workflow-intent2.jsonl
 bin/agent ask "Show channels from the Oracle ADW SH schema." --run-dir /tmp/afs-channel-negative --audit-log /tmp/afs-channel-negative.jsonl
+bin/agent ask "hello" --model-provider mock --run-dir /tmp/afs-llm-mock-smoke --audit-log /tmp/afs-llm-mock-smoke.jsonl
+env -u OPENAI_API_KEY bin/agent ask "hello" --model-provider openai --run-dir /tmp/afs-llm-config-smoke --audit-log /tmp/afs-llm-config-smoke.jsonl
+bin/agent ask "hello" --model-provider oci --run-dir /tmp/afs-oci-doc-fallback --audit-log /tmp/afs-oci-doc-fallback.jsonl
+OCI_API_KEY= bin/agent ask "hello" --model-provider oci --run-dir /tmp/afs-oci-llm-smoke-key2 --audit-log /tmp/afs-oci-llm-smoke-key2.jsonl
 bin/agent status --run-dir /tmp/afs-runs-1
 bin/agent status --run-dir /tmp/afs-runs-2
 bin/agent status --run-dir /tmp/afs-workflow-intent2
 ```
 
-The latest full test run covered 158 tests and passed. Focused query-plan,
-tool, eval-runner, and result-explanation tests pass. The reviewed negative
-channel prompt no longer emits proposed SQL, fake result rows, or real
-execution markers. Focused runtime, SQL execution, SQLcl runner, tool, and
-Oracle ADW tests pass.
+The latest full test run covered 183 tests and passed. Focused model, CLI,
+intent, runtime-control, query-plan, tool, eval-runner, and result-explanation
+tests pass. The reviewed negative channel prompt no longer emits proposed SQL,
+fake result rows, or real execution markers. Focused runtime, SQL execution,
+SQLcl runner, tool, and Oracle ADW tests pass. The mock `agent ask` smoke
+works, and the OpenAI provider path fails closed with `configuration_required`
+when `OPENAI_API_KEY` is not set. OCI provider live smoke now succeeds through
+the API-key fallback route after the documented `/openai/v1` route returns
+OCI 404.
 Query-plan artifacts still propose SQL only after read-only policy validation
 and mark execution as `not_executed`. Fake result explanations are marked as
 deterministic non-real output and use only `FakeSqlExecutionAdapter`.
@@ -389,6 +432,8 @@ deterministic non-real output and use only `FakeSqlExecutionAdapter`.
   and `docs/tracking/todo.md` first.
 - For Oracle ADW execution work, open `agent_runtime/oracle_adw.py` and
   `tests/test_oracle_adw.py` first.
+- For OCI Responses API LLM work, open `docs/runbooks/oci-responses-api.md`,
+  `agent_runtime/model.py`, and `tests/test_model.py` first.
 - Check local git state with:
 
 ```bash

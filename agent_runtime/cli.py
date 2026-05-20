@@ -15,6 +15,7 @@ from typing import Sequence
 from . import __version__
 from .audit import RunRecord, append_audit
 from .loop import AgentLoop
+from .model import MockModel, OpenAIResponsesConfig, OpenAIResponsesModel
 from .monitor import latest_status
 from .oracle_adw import (
     OracleAdwConfig,
@@ -51,6 +52,7 @@ ADMIN_PROVISION_DRIFT_SYS_PRIVILEGES = (
 
 
 def main(argv: Sequence[str] | None = None) -> int:
+    _load_local_env(Path(".env"))
     parser = argparse.ArgumentParser(prog="agent")
     parser.add_argument("--version", action="version", version=__version__)
     subparsers = parser.add_subparsers(dest="command", required=True)
@@ -61,6 +63,27 @@ def main(argv: Sequence[str] | None = None) -> int:
     ask_parser.add_argument("--audit-log", default=str(DEFAULT_AUDIT_PATH))
     ask_parser.add_argument("--max-steps", type=int, default=4)
     ask_parser.add_argument("--timeout-seconds", type=int, default=30)
+    ask_parser.add_argument(
+        "--model-provider",
+        default=_default_model_provider(),
+        help="action model provider: mock, openai, or oci; defaults to AGENT_MODEL_PROVIDER, LLM, or mock",
+    )
+    ask_parser.add_argument(
+        "--openai-model",
+        default=None,
+        help="model id for OpenAI-compatible providers; defaults to provider env",
+    )
+    ask_parser.add_argument(
+        "--openai-base-url",
+        default=None,
+        help="OpenAI-compatible base URL ending in /v1; defaults to provider env",
+    )
+    ask_parser.add_argument(
+        "--openai-timeout-seconds",
+        type=float,
+        default=None,
+        help="OpenAI-compatible request timeout; defaults to provider env or 30",
+    )
 
     status_parser = subparsers.add_parser("status", help="show latest run status")
     status_parser.add_argument("--run-dir", default=str(DEFAULT_RUN_DIR))
@@ -136,6 +159,10 @@ def main(argv: Sequence[str] | None = None) -> int:
             Path(args.run_dir),
             Path(args.audit_log),
             Budget(max_steps=args.max_steps, timeout_seconds=args.timeout_seconds),
+            model_provider=args.model_provider,
+            openai_model=args.openai_model,
+            openai_base_url=args.openai_base_url,
+            openai_timeout_seconds=args.openai_timeout_seconds,
         )
     if args.command == "status":
         return _status(Path(args.run_dir))
@@ -178,12 +205,101 @@ def _ask(
     run_dir: Path,
     audit_path: Path,
     budget: Budget,
+    *,
+    model_provider: str,
+    openai_model: str | None,
+    openai_base_url: str | None,
+    openai_timeout_seconds: float | None,
 ) -> int:
     user_text = " ".join(text_parts)
-    loop = AgentLoop(run_root=run_dir, audit_path=audit_path, budget=budget)
+    try:
+        model = _build_action_model(
+            provider=model_provider,
+            openai_model=openai_model,
+            openai_base_url=openai_base_url,
+            openai_timeout_seconds=openai_timeout_seconds,
+        )
+    except ValueError as exc:
+        normalized_provider = model_provider.strip().casefold()
+        payload = {
+            "state": "configuration_required",
+            "provider": normalized_provider,
+            "error": str(exc),
+            "required_environment": _required_provider_environment(normalized_provider),
+        }
+        print(json.dumps(redact(payload), ensure_ascii=False, indent=2))
+        return 2
+
+    loop = AgentLoop(run_root=run_dir, audit_path=audit_path, budget=budget, model=model)
     result = loop.run(user_text)
     print(json.dumps(result.to_dict(), ensure_ascii=False, indent=2))
     return 0
+
+
+def _build_action_model(
+    *,
+    provider: str,
+    openai_model: str | None,
+    openai_base_url: str | None,
+    openai_timeout_seconds: float | None,
+):
+    normalized_provider = provider.strip().casefold()
+    if normalized_provider == "mock":
+        return MockModel()
+    if normalized_provider == "openai":
+        config = OpenAIResponsesConfig.from_env(
+            model=openai_model,
+            base_url=openai_base_url,
+            timeout_seconds=openai_timeout_seconds,
+        )
+        return OpenAIResponsesModel(config)
+    if normalized_provider == "oci":
+        config = OpenAIResponsesConfig.from_oci_env(
+            model=openai_model,
+            base_url=openai_base_url,
+            timeout_seconds=openai_timeout_seconds,
+        )
+        return OpenAIResponsesModel(config)
+    raise ValueError("model provider must be one of: mock, openai, oci.")
+
+
+def _required_provider_environment(provider: str) -> list[str]:
+    if provider == "openai":
+        return ["OPENAI_API_KEY"]
+    if provider == "oci":
+        return ["OCI_BASE_URL", "OCI_API_KEY or OCI_API_KEY_2"]
+    return []
+
+
+def _default_model_provider() -> str:
+    return (
+        os.environ.get("AGENT_MODEL_PROVIDER")
+        or os.environ.get("LLM")
+        or "mock"
+    )
+
+
+def _load_local_env(path: Path) -> None:
+    if not path.exists() or not path.is_file():
+        return
+    for raw_line in path.read_text(encoding="utf-8").splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith("#"):
+            continue
+        if line.startswith("export "):
+            line = line[len("export ") :].strip()
+        if "=" not in line:
+            continue
+        key, value = line.split("=", 1)
+        key = key.strip()
+        if not key or not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", key):
+            continue
+        if key in os.environ:
+            continue
+        value = value.strip()
+        if len(value) >= 2 and value[0] == value[-1] and value[0] in {"'", '"'}:
+            value = value[1:-1]
+        os.environ[key] = value
 
 
 def _status(run_dir: Path) -> int:

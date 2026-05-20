@@ -194,6 +194,10 @@ Acceptance criteria:
   planned SH query pattern.
 - `[x]` Add golden eval assertions for fake result explanation markers.
 - `[x]` Add eval coverage for fake explanation refusal paths.
+- `[x]` Add an explicit OpenAI Responses API action-model adapter behind
+  `agent ask --model-provider openai`, while keeping mock mode as the default.
+- `[x]` Add an OCI OpenAI-compatible provider path behind
+  `agent ask --model-provider oci` / `LLM=oci`.
 
 ## Milestone 7: Self-Evolution Controls
 
@@ -220,6 +224,11 @@ Acceptance criteria:
 - `[x]` Implement and review the operator-only ADW read-only query command path.
 - `[x]` Extend fake result explanations across supported SH revenue
   product/channel/promotion month query-plan patterns.
+- `[x]` Add optional live LLM action planning through OpenAI Responses API with
+  local action-kind validation and no live ADW/tool-write enablement.
+- `[x]` Configure OCI Generative AI OpenAI-compatible Responses API env support
+  with `OCI_BASE_URL`, `OCI_API_KEY` / `OCI_API_KEY_2`, and
+  `OCI_MODEL=xai.grok-4-1-fast-non-reasoning`.
 - `[ ]` Move completed exec plans to `docs/exec-plans/completed/`.
 - `[ ]` Record durable decisions in `docs/tracking/decisions.md`.
 - `[ ]` Update `docs/tracking/change-log.md` after meaningful changes.

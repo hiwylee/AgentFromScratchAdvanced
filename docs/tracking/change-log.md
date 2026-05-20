@@ -325,3 +325,28 @@ direction and implementation changes, not every tiny edit.
 - Renamed the GitHub repository to `hiwylee/AgentFromScratch`, updated the
   local `origin` URL and temporary git metadata directory, and corrected
   visible project title/link references.
+
+## 2026-05-20
+
+- Added optional OpenAI Responses API action planning for `agent ask` through
+  `--model-provider openai` or `AGENT_MODEL_PROVIDER=openai`. Mock mode remains
+  the default, and the live model can choose only locally allowed action kinds.
+- Added `oci` as a separate OpenAI-compatible Responses API provider for
+  `agent ask`, using `OCI_BASE_URL`, `OCI_API_KEY` / `OCI_API_KEY_2`, and
+  `OCI_MODEL=xai.grok-4-1-fast-non-reasoning`.
+- OCI live smoke reached the configured endpoint with `OCI_PROJECT_OCID` mapped
+  to the `OpenAI-Project` header, but both configured OCI API keys returned
+  `404 Authorization failed or requested resource not found`.
+- Reflected Oracle's OCI Generative AI OpenAI-compatible API docs by retaining
+  `/openai/v1` as the documented base path and adding an API-key fallback to
+  `/20231130/actions/v1/responses` after OCI 404 responses. OCI live smoke now
+  succeeds and returns a locally validated `final_answer` action through the
+  `oci` provider.
+- Added `docs/runbooks/oci-responses-api.md` with OCI Responses API setup,
+  `.env` variables, smoke commands, endpoint fallback behavior, and common
+  failure diagnostics.
+- Added OpenAI model environment documentation in `.env.example` and `README`,
+  kept API keys out of request payload traces, and added tests for provider
+  configuration, action validation, and Responses API output parsing.
+- Corrected the Python project package name to `agent-from-scratch` and
+  refreshed `uv.lock`.

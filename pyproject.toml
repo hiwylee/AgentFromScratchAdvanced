@@ -1,5 +1,5 @@
 [project]
-name = "agent-from-scrach"
+name = "agent-from-scratch"
 version = "0.1.0"
 description = "Intent-first agent runtime prototype with Oracle ADW specialization"
 readme = "README.md"
