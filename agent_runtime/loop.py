@@ -9,7 +9,7 @@ from uuid import uuid4
 
 from .audit import RunRecord, append_audit
 from .intent import analyze_user_intent
-from .model import MockModel
+from .model import ActionModel, MockModel, ModelInvocationError
 from .monitor import RunMonitor
 from .tools import (
     ToolCall,
@@ -47,7 +47,7 @@ class AgentLoop:
     def __init__(
         self,
         *,
-        model: MockModel | None = None,
+        model: ActionModel | None = None,
         budget: Budget | None = None,
         cancellation_token: CancellationToken | None = None,
         tool_registry: ToolRegistry | None = None,
@@ -104,7 +104,23 @@ class AgentLoop:
             state, reason = stopped
             return self._finish_stopped(monitor, intent_data, _control_action(reason), state, reason)
 
-        action = self.model.choose_action(intent)
+        try:
+            action = self.model.choose_action(intent)
+        except ModelInvocationError as exc:
+            action = Action(
+                kind="model_error",
+                reason=exc.code,
+                payload={"error": exc.to_dict()},
+            )
+            monitor.event(
+                "model_action_failed",
+                {
+                    "model": {"name": self.model.name, "version": self.model.version},
+                    "error": exc.to_dict(),
+                },
+            )
+            self._audit(run_id, "model_action_failed", {"error": exc.to_dict()})
+            return self._finish_stopped(monitor, intent_data, action, "failed", exc.code)
         action_steps_used += 1
         monitor.event(
             "model_action_selected",
@@ -244,6 +260,12 @@ def _final_answer(action: Action) -> FinalAnswer:
             ],
             next_action="Select a workflow template and prepare a reviewable execution plan.",
         )
+    if action.kind == "model_error":
+        return FinalAnswer(
+            content="The configured model provider failed before a safe action could be selected.",
+            assumptions=["No live database execution or workflow write was attempted."],
+            next_action="Check model provider configuration or retry with the mock provider.",
+        )
     return FinalAnswer(
         content="This request can be handled without Oracle ADW context.",
         assumptions=[],
@@ -303,6 +325,12 @@ def _control_final_answer(state: RunState, reason: str) -> FinalAnswer:
         return FinalAnswer(
             content="The run was cancelled before it could safely continue.",
             next_action="Start a new run when ready.",
+        )
+    if state == "failed":
+        return FinalAnswer(
+            content="The run failed before it could safely continue.",
+            assumptions=[f"Failure reason: {reason}"],
+            next_action="Inspect the run events and fix the failing configuration.",
         )
     return FinalAnswer(
         content="The run stopped after reaching its configured step limit.",

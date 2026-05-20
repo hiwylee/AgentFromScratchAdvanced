@@ -15,6 +15,7 @@ ActionKind = Literal[
     "inspect_schema",
     "select_workflow",
     "refuse",
+    "model_error",
 ]
 RunState = Literal[
     "running",

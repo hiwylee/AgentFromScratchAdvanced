@@ -237,6 +237,8 @@ class RuntimeControlTests(unittest.TestCase):
                     [
                         "ask",
                         "show oracle adw revenue by product by month",
+                        "--model-provider",
+                        "mock",
                         "--run-dir",
                         str(tmp_path / "runs"),
                         "--audit-log",

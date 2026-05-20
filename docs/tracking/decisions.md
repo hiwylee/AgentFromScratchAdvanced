@@ -353,3 +353,30 @@ Rationale: Re-running setup must not normalize a manually broadened or
 compromised working account. The operator needs a structured result that says
 whether the command created, repaired, skipped, or refused the account without
 relying on raw SQLcl output.
+
+## 2026-05-20: Live LLM Planning Is Explicit And Locally Validated
+
+Decision: Keep `agent ask` on the deterministic mock model by default, and add
+OpenAI Responses API planning only when `--model-provider openai` or
+`AGENT_MODEL_PROVIDER=openai` is set. The live model may choose only from
+locally allowed action kinds, and invalid or unsafe kinds fall back to the
+deterministic baseline.
+
+Rationale: A live LLM is useful for model-backed planning, but it must not be
+the authority that opens Oracle ADW execution, workflow writes, or destructive
+database operations. Local policy validation preserves the current safety
+boundary while enabling real provider smoke tests and future prompt iteration.
+
+## 2026-05-20: OCI Uses A Separate OpenAI-Compatible Provider
+
+Decision: Add `oci` as its own model provider instead of overloading OpenAI
+environment variables. OCI uses `OCI_BASE_URL`, `OCI_API_KEY` or
+`OCI_API_KEY_2`, and `OCI_MODEL`, while reusing the same Responses API adapter
+and local action-kind validation. The provider first uses Oracle's documented
+OpenAI-compatible `/openai/v1` base path and then falls back to the API-key
+`/20231130/actions/v1/responses` path after OCI 404 responses.
+
+Rationale: OCI Generative AI is OpenAI-compatible at the HTTP boundary, but its
+endpoint, key rotation, and model identifiers are operationally separate from
+OpenAI. A provider split avoids mixing credentials and keeps fallback models
+such as `xai.grok-4-1-fast-non-reasoning` explicit.

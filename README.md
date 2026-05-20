@@ -76,6 +76,41 @@ Run tests with:
 UV_CACHE_DIR=.uv-cache uv run --python 3.12 python -m unittest discover -s tests
 ```
 
+## Optional Live LLM Provider
+
+The default action model can remain deterministic mock mode, or route through
+an OpenAI-compatible Responses API provider. For OpenAI, set `OPENAI_API_KEY`
+and opt in explicitly:
+
+```bash
+bin/agent ask "지난달 상품별 매출 추이를 보여줘" --model-provider openai
+```
+
+For OCI Generative AI's OpenAI-compatible endpoint, set `OCI_BASE_URL` and
+`OCI_API_KEY` or `OCI_API_KEY_2`, then use:
+
+```bash
+bin/agent ask "지난달 상품별 매출 추이를 보여줘" --model-provider oci
+```
+
+Useful environment variables:
+
+- `AGENT_MODEL_PROVIDER=mock`, `openai`, or `oci`
+- `LLM=mock`, `openai`, or `oci`
+- `OPENAI_API_KEY`
+- `OPENAI_MODEL`, default `gpt-5.2`
+- `OPENAI_BASE_URL`, default `https://api.openai.com/v1`
+- `OPENAI_TIMEOUT_SECONDS`, default `30`
+- `OCI_BASE_URL`
+- `OCI_API_KEY` or `OCI_API_KEY_2`
+- `OCI_MODEL`, default `xai.grok-4-1-fast-non-reasoning`
+- `OCI_TIMEOUT_SECONDS`, default `30`
+
+Live LLM planning does not enable live Oracle ADW execution or workflow writes.
+Those remain behind their explicit operator-only confirmation commands.
+OCI-specific setup and troubleshooting are documented in
+`docs/runbooks/oci-responses-api.md`.
+
 ## First Discussion Topics
 
 - Runtime language and packaging.
