@@ -374,3 +374,8 @@ direction and implementation changes, not every tiny edit.
   `"month"` and `"monthly"` are injected so pattern matching succeeds for
   queries like "추이 분석해줘".
 - Added `CLAUDE.md` with project guidance and added `.omc/` to `.gitignore`.
+- Added daily (일별) query patterns to `query_plan.py`: revenue by product/day,
+  revenue by channel/day, and revenue by promotion(category/subcategory)/day.
+  Day grouping uses `TIMES.TIME_ID`. Added `_has_day_term()` helper and updated
+  `_select_query_pattern` to prefer daily over monthly when "day"/"daily"/"일별"
+  is detected. Supported pattern matrix is now 4 dimensions × 2 time grains.
