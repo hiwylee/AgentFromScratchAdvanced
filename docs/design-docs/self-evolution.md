@@ -55,6 +55,11 @@ The first implementation is a control plane only:
   drift checks pass, rollback covers every affected artifact path with matching
   artifact type and before/after versions, and behavior-shaping changes are
   limited to one artifact type at a time.
+- Operators can record a candidate through
+  `bin/agent operator propose-improvement`. The command writes a proposed
+  candidate artifact and an operator audit event only; it does not run the
+  acceptance gate, approve review/provenance, edit artifacts, or apply behavior
+  changes.
 - Gate inputs must prove they came from the configured frozen fixtures. Eval
   results must include every fixture case from `artifacts/evals/golden` and
   the manifest `golden_fixture` version. Drift results must include the

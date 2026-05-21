@@ -269,8 +269,8 @@ class OracleAdwConfig:
             "db_user_configured": self.db_user is not None,
             "db_user_pass_configured": self.db_user_pass is not None,
             "db_dsn_configured": self.db_dsn is not None,
-            "db_wallet_path": self.db_wallet_path,
-            "db_wallet_file": self.db_wallet_file,
+            "db_wallet_path_configured": self.db_wallet_path is not None,
+            "db_wallet_file_configured": self.db_wallet_file is not None,
             "db_wallet_pass_configured": self.db_wallet_pass is not None,
         }
 
@@ -436,11 +436,7 @@ def resolve_sqlcl_path(
     path_lookup: Callable[[str], str | None] = shutil.which,
 ) -> Path | None:
     if configured_path:
-        expanded = Path(configured_path).expanduser()
-        if expanded.is_absolute() or len(expanded.parts) > 1:
-            return expanded
-        resolved = path_lookup(configured_path)
-        return Path(resolved) if resolved else expanded
+        return Path(configured_path).expanduser()
 
     resolved_default = path_lookup("sql")
     if resolved_default:
@@ -456,6 +452,16 @@ def verify_sqlcl(
     path_lookup: Callable[[str], str | None] = shutil.which,
 ) -> SqlclStatus:
     resolved = resolve_sqlcl_path(config.sqlcl_path, path_lookup=path_lookup)
+    if config.sqlcl_path is not None and resolved is not None and not resolved.is_absolute():
+        return SqlclStatus(
+            configured_path=config.sqlcl_path,
+            resolved_path=str(resolved),
+            exists=False,
+            executable=False,
+            version_checked=False,
+            ok=False,
+            error="sqlcl_path_must_be_absolute",
+        )
     if resolved is None:
         return SqlclStatus(
             configured_path=config.sqlcl_path,
@@ -546,6 +552,10 @@ def build_read_only_sqlcl_execution_plan(
 
     if not config.sqlcl_path:
         raise ValueError("SQLCL_PATH is required for SQLcl execution planning")
+    sqlcl_path = Path(config.sqlcl_path).expanduser()
+    if not sqlcl_path.is_absolute():
+        raise ValueError("SQLCL_PATH must be an absolute path for SQLcl execution planning")
+    sqlcl_executable = str(sqlcl_path.resolve(strict=False))
     working_user = _required_working_user_identifier(config.db_user)
     if not config.db_user_pass:
         raise ValueError("DB_USER_PASS is required for SQLcl execution planning")
@@ -580,7 +590,7 @@ def build_read_only_sqlcl_execution_plan(
         if value
     )
     return SqlclReadOnlyExecutionPlan(
-        command=(str(Path(config.sqlcl_path).expanduser()), "-S", "-L", "-nolog"),
+        command=(sqlcl_executable, "-S", "-L", "-nolog"),
         env=env,
         stdin=stdin,
         timeout_seconds=effective_settings.timeout_seconds,
@@ -684,8 +694,21 @@ def build_redacted_sqlcl_audit_record(
         "execution": plan.to_redacted_dict(),
     }
     if outcome is not None:
-        record["outcome"] = outcome.to_redacted_dict()
+        record["outcome"] = _sqlcl_outcome_audit_summary(outcome)
     return redact(record)
+
+
+def _sqlcl_outcome_audit_summary(outcome: SqlclExecutionOutcome) -> dict[str, object]:
+    summary: dict[str, object] = {"ok": outcome.ok}
+    if outcome.result is not None:
+        summary["result"] = {
+            "columns": outcome.result.columns,
+            "column_count": len(outcome.result.columns),
+            "row_count": outcome.result.row_count,
+        }
+    if outcome.error is not None:
+        summary["error"] = outcome.error.to_redacted_dict()
+    return summary
 
 
 def validate_read_only_sql(sql: str) -> SqlPolicyResult:

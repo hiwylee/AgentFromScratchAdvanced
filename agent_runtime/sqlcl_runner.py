@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 import os
+import signal
 import subprocess
 import threading
 import time
@@ -229,7 +230,9 @@ def _run_subprocess_with_stream_limits(
         stderr=subprocess.PIPE,
         env=dict(env),
         text=False,
+        start_new_session=True,
     )
+    process_group_id = _process_group_id(process)
     stop_process = threading.Event()
     stdout = _BoundedProcessStream(max_stdout_bytes, stop_process)
     stderr = _BoundedProcessStream(max_stderr_bytes, stop_process)
@@ -263,11 +266,11 @@ def _run_subprocess_with_stream_limits(
             if process_exited and streams_drained:
                 break
             if stop_process.is_set():
-                _terminate_process(process)
+                _terminate_process(process, process_group_id=process_group_id)
                 break
             if time.monotonic() >= deadline:
                 timed_out = True
-                _terminate_process(process)
+                _terminate_process(process, process_group_id=process_group_id)
                 break
             time.sleep(0.01)
 
@@ -276,7 +279,7 @@ def _run_subprocess_with_stream_limits(
 
         returncode = process.poll()
         if returncode is None:
-            process.kill()
+            _terminate_process(process, process_group_id=process_group_id)
             returncode = process.wait()
     finally:
         for stream in (process.stdin, process.stdout, process.stderr):
@@ -350,15 +353,56 @@ def _write_process_stdin(process: subprocess.Popen[bytes], input_text: str) -> N
         pass
 
 
-def _terminate_process(process: subprocess.Popen[bytes]) -> None:
-    if process.poll() is not None:
+def _terminate_process(
+    process: subprocess.Popen[bytes],
+    *,
+    process_group_id: int | None = None,
+) -> None:
+    if process.poll() is not None and process_group_id is None:
         return
-    process.terminate()
+    _signal_process_group(process, signal.SIGTERM, process_group_id=process_group_id)
     try:
         process.wait(timeout=1)
     except subprocess.TimeoutExpired:
+        pass
+
+    # The group leader can exit while child processes keep stdout/stderr pipes
+    # open. Always escalate a captured process group after the SIGTERM grace
+    # period so timeout/output-limit paths do not leave descendants alive.
+    _signal_process_group(process, signal.SIGKILL, process_group_id=process_group_id)
+    try:
+        process.wait(timeout=1)
+        return
+    except subprocess.TimeoutExpired:
+        pass
+
+    if process.poll() is None:
         process.kill()
         process.wait()
+
+
+def _process_group_id(process: subprocess.Popen[bytes]) -> int | None:
+    try:
+        return os.getpgid(process.pid)
+    except (AttributeError, ProcessLookupError, PermissionError, OSError):
+        return None
+
+
+def _signal_process_group(
+    process: subprocess.Popen[bytes],
+    sig: int,
+    *,
+    process_group_id: int | None = None,
+) -> None:
+    try:
+        pgid = process_group_id if process_group_id is not None else os.getpgid(process.pid)
+        os.killpg(pgid, sig)
+    except (AttributeError, ProcessLookupError, PermissionError, OSError):
+        if process.poll() is None:
+            if sig == signal.SIGTERM:
+                process.terminate()
+            else:
+                process.kill()
 
 
 def build_redacted_sqlcl_runner_metadata(

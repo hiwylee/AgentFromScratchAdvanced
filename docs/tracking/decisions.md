@@ -380,3 +380,16 @@ Rationale: OCI Generative AI is OpenAI-compatible at the HTTP boundary, but its
 endpoint, key rotation, and model identifiers are operationally separate from
 OpenAI. A provider split avoids mixing credentials and keeps fallback models
 such as `xai.grok-4-1-fast-non-reasoning` explicit.
+
+## 2026-05-20: Improvement Candidates Can Be Recorded, Not Applied
+
+Decision: Add `bin/agent operator propose-improvement` as an operator-only
+recording path for self-evolution candidates. The command writes a proposed
+candidate artifact and audit record, but does not run the acceptance gate,
+approve reviews, edit behavior-shaping artifacts, or apply changes.
+
+Rationale: The project needs a structured way to capture improvement ideas from
+operator sessions, eval failures, and reviews without weakening the
+closed-by-default self-evolution boundary. Candidate application still requires
+approved provenance, frozen evals, drift checks, rollback coverage, and a
+separate reviewed action.

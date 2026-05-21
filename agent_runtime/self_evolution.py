@@ -9,6 +9,7 @@ all be present before a behavior-shaping candidate can be accepted.
 from __future__ import annotations
 
 import json
+import math
 from collections.abc import Iterable, Mapping
 from dataclasses import asdict, dataclass, field
 from hashlib import sha256
@@ -332,6 +333,70 @@ def load_improvement_candidate(path: Path) -> ImprovementCandidateRecord:
     return ImprovementCandidateRecord.from_dict(_load_json(path))
 
 
+def build_improvement_candidate(
+    *,
+    candidate_id: str,
+    candidate_type: CandidateType,
+    trigger_type: str,
+    summary: str,
+    proposed_change: str,
+    affected_artifacts: Iterable[ArtifactChange],
+    source_type: str,
+    source_id: str,
+    author: str,
+    confidence: float = 0.5,
+    evidence: Iterable[str] = (),
+    risk_level: str = "medium",
+) -> ImprovementCandidateRecord:
+    payload = {
+        "schema_version": IMPROVEMENT_CANDIDATE_SCHEMA_VERSION,
+        "candidate_id": candidate_id,
+        "candidate_type": candidate_type,
+        "status": "proposed",
+        "trigger_type": trigger_type,
+        "summary": summary,
+        "proposed_change": proposed_change,
+        "affected_artifacts": [artifact.to_dict() for artifact in affected_artifacts],
+        "provenance": {
+            "source_type": source_type,
+            "source_id": source_id,
+            "author": author,
+            "recorded_at": utc_now(),
+            "confidence": confidence,
+            "evidence": list(evidence),
+            "scope": "project",
+            "expires_at": None,
+            "review_status": "pending",
+        },
+        "risk_level": risk_level,
+        "review": {
+            "decision": "pending",
+            "reviewer": None,
+            "reviewed_at": None,
+            "notes": "",
+        },
+    }
+    return ImprovementCandidateRecord.from_dict(payload)
+
+
+def write_improvement_candidate(
+    candidate: ImprovementCandidateRecord,
+    path: Path,
+    *,
+    overwrite: bool = False,
+) -> Path:
+    if path.exists() and not overwrite:
+        raise FileExistsError(f"improvement candidate already exists: {path}")
+    payload = candidate.to_dict()
+    assert_no_known_secret_values(payload, context="improvement candidate")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    return path
+
+
 def load_memory_record(path: Path) -> MemoryRecord:
     return MemoryRecord.from_dict(_load_json(path))
 
@@ -366,6 +431,8 @@ def evaluate_self_evolution_gate(
         reasons.append("frozen evals must pass")
     if not drift_result.case_results:
         reasons.append("drift check result must include at least one case")
+    if drift_result.schema_version != DRIFT_RESULT_SCHEMA_VERSION:
+        reasons.append("drift result schema_version is unsupported")
     reasons.extend(_drift_result_mismatches(drift_result))
     if not drift_result.passed:
         reasons.append("drift checks must pass")
@@ -390,7 +457,9 @@ def evaluate_self_evolution_gate(
             + ", ".join(sorted(behavior_types))
         )
     affected_types = {artifact.artifact_type for artifact in candidate.affected_artifacts}
-    if candidate.candidate_type != "docs" and affected_types != {candidate.candidate_type}:
+    if candidate.candidate_type == "docs" and affected_types != {"docs"}:
+        reasons.append("docs candidates may only affect docs artifacts")
+    if affected_types != {candidate.candidate_type}:
         reasons.append("candidate_type must match all affected artifact types")
 
     status = "blocked" if reasons else "passed"
@@ -806,7 +875,10 @@ def _string_tuple(value: Any, path: str) -> tuple[str, ...]:
 def _number(value: Any, path: str) -> float:
     if not isinstance(value, (int, float)) or isinstance(value, bool):
         raise ValueError(f"{path} must be a number")
-    return float(value)
+    number = float(value)
+    if not math.isfinite(number):
+        raise ValueError(f"{path} must be a finite number")
+    return number
 
 
 def _one_of(value: Any, allowed: set[str], path: str) -> str:
@@ -833,10 +905,12 @@ __all__ = [
     "RollbackArtifact",
     "RollbackPlan",
     "SelfEvolutionGateReport",
+    "build_improvement_candidate",
     "evaluate_self_evolution_gate",
     "load_drift_cases",
     "load_improvement_candidate",
     "load_memory_record",
     "load_rollback_plan",
     "run_drift_checks",
+    "write_improvement_candidate",
 ]

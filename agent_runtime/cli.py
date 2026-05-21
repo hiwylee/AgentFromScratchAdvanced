@@ -27,8 +27,10 @@ from .oracle_adw import (
     verify_wallet_paths,
 )
 from .redaction import redact
+from .self_evolution import ArtifactChange, build_improvement_candidate, write_improvement_candidate
 from .sql_execution import SqlExecutionRequest, SqlclReadOnlyAdapter
 from .sqlcl_runner import SqlclSubprocessRequest, run_sqlcl_subprocess
+from .trace import SecretLeakError
 from .types import Budget
 from .workflow import WorkflowEngine
 
@@ -150,6 +152,44 @@ def main(argv: Sequence[str] | None = None) -> int:
         action="store_true",
         help="explicitly allow this operator-only admin provisioning action",
     )
+    improvement_parser = operator_subparsers.add_parser(
+        "propose-improvement",
+        help="record a proposed self-evolution improvement candidate",
+    )
+    improvement_parser.add_argument("--audit-log", default=str(DEFAULT_AUDIT_PATH))
+    improvement_parser.add_argument(
+        "--output-dir",
+        default="artifacts/improvement-candidates",
+        help="directory for candidate JSON artifacts",
+    )
+    improvement_parser.add_argument("--candidate-id", required=True)
+    improvement_parser.add_argument(
+        "--candidate-type",
+        required=True,
+        choices=("prompt", "policy", "memory", "eval", "schema_context", "docs"),
+    )
+    improvement_parser.add_argument("--trigger-type", required=True)
+    improvement_parser.add_argument("--summary", required=True)
+    improvement_parser.add_argument("--proposed-change", required=True)
+    improvement_parser.add_argument(
+        "--affected-artifact",
+        action="append",
+        nargs=4,
+        metavar=("PATH", "TYPE", "CURRENT_VERSION", "PROPOSED_VERSION"),
+        required=True,
+        help="affected artifact tuple; repeat for multiple artifacts",
+    )
+    improvement_parser.add_argument("--source-type", required=True)
+    improvement_parser.add_argument("--source-id", required=True)
+    improvement_parser.add_argument("--author", default=getpass.getuser())
+    improvement_parser.add_argument("--confidence", type=float, default=0.5)
+    improvement_parser.add_argument("--evidence", action="append", default=[])
+    improvement_parser.add_argument("--risk-level", default="medium")
+    improvement_parser.add_argument(
+        "--overwrite",
+        action="store_true",
+        help="replace an existing candidate artifact with the same id",
+    )
 
     args = parser.parse_args(argv)
 
@@ -194,6 +234,24 @@ def main(argv: Sequence[str] | None = None) -> int:
             timeout_seconds=args.timeout_seconds,
             grant_profile=args.grant_profile,
             confirm_admin_provision=args.confirm_live_adw_admin_provision,
+        )
+    if args.command == "operator" and args.operator_command == "propose-improvement":
+        return _operator_propose_improvement(
+            audit_path=Path(args.audit_log),
+            output_dir=Path(args.output_dir),
+            candidate_id=args.candidate_id,
+            candidate_type=args.candidate_type,
+            trigger_type=args.trigger_type,
+            summary=args.summary,
+            proposed_change=args.proposed_change,
+            affected_artifacts=args.affected_artifact,
+            source_type=args.source_type,
+            source_id=args.source_id,
+            author=args.author,
+            confidence=args.confidence,
+            evidence=args.evidence,
+            risk_level=args.risk_level,
+            overwrite=args.overwrite,
         )
 
     parser.error(f"unknown command: {args.command}")
@@ -447,7 +505,7 @@ def _operator_adw_smoke(
             "response": response_dict,
         },
     )
-    _append_operator_audit(audit_path, "operator.adw_smoke", payload)
+    _append_operator_audit(audit_path, "operator.adw_smoke", _operator_query_audit_payload(payload))
     print(json.dumps(redact(payload), ensure_ascii=False, indent=2))
     return 0 if response.ok else 1
 
@@ -705,13 +763,14 @@ def _operator_adw_provision_user(
         timeout_seconds=timeout_seconds,
         grant_profile=grant_profile,
     )
-    succeeded = completed["status"] == "completed"
+    runner_succeeded = completed["status"] == "completed"
     classification = _classify_admin_provisioning_result(
         config=config,
         grant_profile=grant_profile,
         completed=completed,
     )
-    state = "succeeded" if succeeded else "failed"
+    provisioning_succeeded = _admin_provisioning_classification_is_compliant_success(classification)
+    state = "succeeded" if provisioning_succeeded else "failed"
     if classification["classification"] == "rejected_drift":
         state = "rejected"
     actions_applied = completed.get("actions_applied", [])
@@ -721,7 +780,9 @@ def _operator_adw_provision_user(
         "command": command,
         "admin_execution_requested": True,
         "admin_execution_attempted": admin_apply_attempted,
-        "admin_execution_succeeded": succeeded,
+        "admin_execution_succeeded": provisioning_succeeded,
+        "runner_succeeded": runner_succeeded,
+        "provisioning_succeeded": provisioning_succeeded,
         "admin_metadata_inspection_attempted": True,
         "admin_apply_attempted": admin_apply_attempted,
         "working_user": _safe_oracle_identifier(config.db_user or ""),
@@ -748,7 +809,126 @@ def _operator_adw_provision_user(
         },
     )
     print(json.dumps(redact(payload), ensure_ascii=False, indent=2))
-    return 0 if succeeded else 1
+    return 0 if provisioning_succeeded else 1
+
+
+def _admin_provisioning_classification_is_compliant_success(
+    classification: dict[str, object],
+) -> bool:
+    classification_name = classification.get("classification")
+    if classification_name not in {
+        "already_compliant",
+        "created",
+        "granted_missing_privileges",
+    }:
+        return False
+    state = classification.get("state")
+    if not isinstance(state, dict):
+        return False
+    active_prefix = state.get("active_prefix")
+    if not isinstance(active_prefix, str):
+        return False
+    active_state = state.get(active_prefix)
+    if not isinstance(active_state, dict):
+        return False
+    return active_state.get("compliant") is True
+
+
+def _operator_propose_improvement(
+    *,
+    audit_path: Path,
+    output_dir: Path,
+    candidate_id: str,
+    candidate_type: str,
+    trigger_type: str,
+    summary: str,
+    proposed_change: str,
+    affected_artifacts: Sequence[Sequence[str]],
+    source_type: str,
+    source_id: str,
+    author: str,
+    confidence: float,
+    evidence: Sequence[str],
+    risk_level: str,
+    overwrite: bool,
+) -> int:
+    command = "operator propose-improvement"
+    try:
+        safe_name = _safe_improvement_candidate_filename(candidate_id)
+        artifacts = tuple(
+            ArtifactChange.from_dict(
+                {
+                    "path": artifact[0],
+                    "artifact_type": artifact[1],
+                    "current_version": artifact[2],
+                    "proposed_version": artifact[3],
+                },
+                path=f"affected_artifacts[{index}]",
+            )
+            for index, artifact in enumerate(affected_artifacts)
+        )
+        candidate = build_improvement_candidate(
+            candidate_id=candidate_id,
+            candidate_type=candidate_type,  # type: ignore[arg-type]
+            trigger_type=trigger_type,
+            summary=summary,
+            proposed_change=proposed_change,
+            affected_artifacts=artifacts,
+            source_type=source_type,
+            source_id=source_id,
+            author=author,
+            confidence=confidence,
+            evidence=evidence,
+            risk_level=risk_level,
+        )
+        output_path = output_dir / f"{safe_name}.json"
+        write_improvement_candidate(candidate, output_path, overwrite=overwrite)
+    except (FileExistsError, SecretLeakError, ValueError) as exc:
+        payload = {
+            "state": "rejected",
+            "command": command,
+            "candidate_id": candidate_id,
+            "error": {
+                "code": "invalid_improvement_candidate",
+                "message": str(exc),
+            },
+        }
+        _append_operator_audit(audit_path, "operator.improvement_candidate", payload)
+        print(json.dumps(redact(payload), ensure_ascii=False, indent=2))
+        return 1
+    except OSError as exc:
+        payload = {
+            "state": "failed",
+            "command": command,
+            "candidate_id": candidate_id,
+            "error": {
+                "code": "candidate_write_failed",
+                "message": f"candidate artifact could not be written: {exc.__class__.__name__}.",
+            },
+        }
+        _append_operator_audit(audit_path, "operator.improvement_candidate", payload)
+        print(json.dumps(redact(payload), ensure_ascii=False, indent=2))
+        return 1
+
+    payload = {
+        "state": "recorded",
+        "command": command,
+        "candidate_path": str(output_path),
+        "candidate": candidate.to_dict(),
+        "acceptance_gate_state": "not_run",
+        "applied": False,
+    }
+    _append_operator_audit(audit_path, "operator.improvement_candidate", payload)
+    print(json.dumps(redact(payload), ensure_ascii=False, indent=2))
+    return 0
+
+
+def _safe_improvement_candidate_filename(candidate_id: str) -> str:
+    if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,127}", candidate_id):
+        raise ValueError(
+            "candidate_id must be 1-128 characters using only letters, numbers, dot, underscore, or hyphen"
+        )
+    return candidate_id
 
 
 def _validate_operator_adw_config(
@@ -921,16 +1101,39 @@ def _load_operator_sql(
     if sql_file is not None:
         path = Path(sql_file).expanduser()
         try:
-            sql_text = path.read_text(encoding="utf-8")
+            with path.open("rb") as file:
+                sql_bytes = file.read(MAX_OPERATOR_SQL_BYTES + 1)
         except OSError as exc:
             return None, "file", {
                 "code": "sql_file_unreadable",
                 "message": f"SQL file could not be read: {exc.__class__.__name__}.",
             }
+        if len(sql_bytes) > MAX_OPERATOR_SQL_BYTES:
+            return None, "file", _operator_sql_too_large_error(len(sql_bytes))
+        sql_text, decode_error = _decode_operator_sql_bytes(sql_bytes, source="file")
+        if decode_error is not None:
+            return None, "file", decode_error
+        assert sql_text is not None
         sql_text, error = _validate_operator_sql_text(sql_text)
         return sql_text, "file", error
     if sql_stdin:
-        sql_text = sys.stdin.read()
+        try:
+            stdin_buffer = getattr(sys.stdin, "buffer", None)
+            if stdin_buffer is not None:
+                sql_bytes = stdin_buffer.read(MAX_OPERATOR_SQL_BYTES + 1)
+                if len(sql_bytes) > MAX_OPERATOR_SQL_BYTES:
+                    return None, "stdin", _operator_sql_too_large_error(len(sql_bytes))
+                sql_text, decode_error = _decode_operator_sql_bytes(sql_bytes, source="stdin")
+                if decode_error is not None:
+                    return None, "stdin", decode_error
+                assert sql_text is not None
+            else:
+                sql_text = sys.stdin.read(MAX_OPERATOR_SQL_BYTES + 1)
+        except OSError as exc:
+            return None, "stdin", {
+                "code": "sql_stdin_unreadable",
+                "message": f"SQL stdin could not be read: {exc.__class__.__name__}.",
+            }
         sql_text, error = _validate_operator_sql_text(sql_text)
         return sql_text, "stdin", error
     return None, None, {
@@ -939,14 +1142,26 @@ def _load_operator_sql(
     }
 
 
+def _decode_operator_sql_bytes(
+    sql_bytes: bytes,
+    *,
+    source: str,
+) -> tuple[str | None, dict[str, object] | None]:
+    try:
+        return sql_bytes.decode("utf-8"), None
+    except UnicodeDecodeError as exc:
+        return None, {
+            "code": "invalid_sql_encoding",
+            "message": f"SQL {source} must be valid UTF-8.",
+            "encoding": "utf-8",
+            "reason": exc.reason,
+        }
+
+
 def _validate_operator_sql_text(sql_text: str) -> tuple[str | None, dict[str, object] | None]:
     byte_length = len(sql_text.encode("utf-8"))
     if byte_length > MAX_OPERATOR_SQL_BYTES:
-        return None, {
-            "code": "sql_too_large",
-            "message": f"SQL text must be at most {MAX_OPERATOR_SQL_BYTES} bytes.",
-            "sql_bytes": byte_length,
-        }
+        return None, _operator_sql_too_large_error(byte_length)
     normalized_sql = sql_text.strip()
     if not normalized_sql:
         return None, {
@@ -954,6 +1169,14 @@ def _validate_operator_sql_text(sql_text: str) -> tuple[str | None, dict[str, ob
             "message": "SQL text is empty.",
         }
     return normalized_sql, None
+
+
+def _operator_sql_too_large_error(byte_length: int) -> dict[str, object]:
+    return {
+        "code": "sql_too_large",
+        "message": f"SQL text must be at most {MAX_OPERATOR_SQL_BYTES} bytes.",
+        "sql_bytes": byte_length,
+    }
 
 
 def _run_admin_provision_sqlcl(

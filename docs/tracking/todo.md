@@ -229,7 +229,9 @@ Acceptance criteria:
 - `[x]` Configure OCI Generative AI OpenAI-compatible Responses API env support
   with `OCI_BASE_URL`, `OCI_API_KEY` / `OCI_API_KEY_2`, and
   `OCI_MODEL=xai.grok-4-1-fast-non-reasoning`.
-- `[ ]` Move completed exec plans to `docs/exec-plans/completed/`.
-- `[ ]` Record durable decisions in `docs/tracking/decisions.md`.
-- `[ ]` Update `docs/tracking/change-log.md` after meaningful changes.
+- `[x]` Move completed exec plans to `docs/exec-plans/completed/`.
+- `[x]` Add operator-only improvement candidate recording without applying
+  behavior changes.
+- `[x]` Record durable decisions in `docs/tracking/decisions.md`.
+- `[x]` Update `docs/tracking/change-log.md` after meaningful changes.
 - `[ ]` Keep `docs/tracking/current-state.md` accurate before ending sessions.

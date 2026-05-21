@@ -27,6 +27,7 @@ behavior.
 - `docs/product-specs/`: what the agent should do and not do.
 - `docs/design-docs/`: architecture and tradeoff records.
 - `docs/exec-plans/active/`: current implementation plans.
+- `docs/exec-plans/completed/`: completed implementation plans and outcomes.
 - `docs/tracking/`: current state, todo list, decisions, and change log.
 - `docs/references/`: notes from `../codex` and external references.
 
@@ -73,7 +74,7 @@ bin/agent status
 Run tests with:
 
 ```bash
-UV_CACHE_DIR=.uv-cache uv run --python 3.13 python -m unittest discover -s tests
+uv run --python 3.13 python -m pytest -q
 ```
 
 ## Optional Live LLM Provider

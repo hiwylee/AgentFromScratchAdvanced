@@ -153,6 +153,30 @@ class SqlclReadOnlyAdapterTests(unittest.TestCase):
         self.assertNotIn("adw-secret-service", rendered)
         self.assertNotIn("wallet-secret", rendered)
 
+    def test_enabled_runner_success_keeps_rows_on_response_but_not_audit(self):
+        def runner(plan):
+            return SqlclRunResult(
+                returncode=0,
+                stdout='{"items":[{"CUSTOMER_ID":1,"EMAIL":"customer@example.com"}]}',
+            )
+
+        adapter = SqlclReadOnlyAdapter(
+            _config(),
+            allow_real_execution=True,
+            runner=runner,
+        )
+
+        response = adapter.execute(SqlExecutionRequest(sql="select customer_id, email from customers"))
+        audit_text = str(response.audit_metadata)
+
+        self.assertTrue(response.ok)
+        self.assertEqual(({"CUSTOMER_ID": 1, "EMAIL": "customer@example.com"},), response.rows)
+        self.assertNotIn("rows", audit_text)
+        self.assertNotIn("customer@example.com", audit_text)
+        self.assertEqual(1, response.audit_metadata["outcome"]["result"]["row_count"])
+        self.assertEqual(2, response.audit_metadata["outcome"]["result"]["column_count"])
+        self.assertEqual(("CUSTOMER_ID", "EMAIL"), response.audit_metadata["outcome"]["result"]["columns"])
+
     def test_enabled_runner_failure_returns_structured_redacted_error(self):
         calls = []
 

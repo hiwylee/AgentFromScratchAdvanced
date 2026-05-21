@@ -7,7 +7,7 @@ work has a clear map, decision trail, and verification habit.
 
 ## Status
 
-In progress.
+Completed.
 
 ## Scope
 
@@ -25,14 +25,17 @@ In progress.
 - Minimal tool set for milestone 1.
 - Testing framework.
 
-## Proposed Next Step
+## Outcome
 
-Choose the runtime language and milestone 1 shape, then create the first
-compilable package with a mock-driven agent loop.
+The bootstrap harness is complete. The project now has stable repository
+instructions, product and design docs, tracking files, a uv-managed Python
+3.13+ prototype, audit/trace output, workflow and Oracle ADW design boundaries,
+eval fixtures, and follow-on runtime milestones tracked in `docs/tracking/`.
 
 ## Verification
 
-No runtime verification yet. This bootstrap creates documentation only.
+Original bootstrap verification was documentation-only. Runtime verification is
+now tracked in `docs/tracking/current-state.md` and `docs/tracking/change-log.md`.
 
 Tracking verification:
 

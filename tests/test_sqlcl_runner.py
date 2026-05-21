@@ -1,7 +1,9 @@
 import subprocess
 import sys
+import tempfile
 import time
 import unittest
+from pathlib import Path
 
 from agent_runtime.oracle_adw import SqlclReadOnlyExecutionPlan, SqlclRunResult
 from agent_runtime.redaction import REDACTION
@@ -179,6 +181,76 @@ class SqlclSubprocessRunnerTests(unittest.TestCase):
         self.assertEqual("completed", result.status)
         self.assertEqual(0, result.returncode)
         self.assertIn("late child output", result.stdout)
+
+    def test_default_runner_timeout_kills_child_process_group(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            marker = Path(tmp) / "child-survived.txt"
+            plan = _plan(
+                command=(
+                    sys.executable,
+                    "-c",
+                    (
+                        "import subprocess, sys, time; "
+                        "subprocess.Popen([sys.executable, '-c', "
+                        f"\"import pathlib, time; time.sleep(1.2); pathlib.Path({str(marker)!r}).write_text('survived')\"]); "
+                        "time.sleep(10)"
+                    ),
+                ),
+                timeout_seconds=1,
+            )
+
+            result = run_sqlcl_plan(plan)
+            time.sleep(1.6)
+
+            self.assertEqual("timeout", result.status)
+            self.assertFalse(marker.exists())
+
+    def test_default_runner_output_limit_kills_child_process_group(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            marker = Path(tmp) / "child-survived.txt"
+            plan = _plan(
+                command=(
+                    sys.executable,
+                    "-c",
+                    (
+                        "import subprocess, sys, time; "
+                        "subprocess.Popen([sys.executable, '-c', "
+                        f"\"import pathlib, time; time.sleep(1.2); pathlib.Path({str(marker)!r}).write_text('survived')\"]); "
+                        "sys.stdout.write('x' * 2048); sys.stdout.flush(); time.sleep(10)"
+                    ),
+                ),
+                timeout_seconds=30,
+                max_output_bytes=1024,
+            )
+
+            result = run_sqlcl_plan(plan)
+            time.sleep(1.6)
+
+            self.assertEqual("output_too_large", result.status)
+            self.assertFalse(marker.exists())
+
+    def test_default_runner_timeout_kills_child_when_group_leader_exited(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            marker = Path(tmp) / "child-survived.txt"
+            plan = _plan(
+                command=(
+                    sys.executable,
+                    "-c",
+                    (
+                        "import subprocess, sys; "
+                        "subprocess.Popen([sys.executable, '-c', "
+                        f"\"import pathlib, time; time.sleep(1.2); pathlib.Path({str(marker)!r}).write_text('survived')\"]); "
+                        "sys.exit(0)"
+                    ),
+                ),
+                timeout_seconds=1,
+            )
+
+            result = run_sqlcl_plan(plan)
+            time.sleep(1.6)
+
+            self.assertEqual("timeout", result.status)
+            self.assertFalse(marker.exists())
 
     def test_generic_sqlcl_subprocess_runner_bounds_admin_style_output(self):
         request = SqlclSubprocessRequest(

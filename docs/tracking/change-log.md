@@ -385,3 +385,27 @@ direction and implementation changes, not every tiny edit.
   Day grouping uses `TIMES.TIME_ID`. Added `_has_day_term()` helper and updated
   `_select_query_pattern` to prefer daily over monthly when "day"/"daily"/"일별"
   is detected. Supported pattern matrix is now 4 dimensions × 2 time grains.
+- Added `bin/agent operator propose-improvement`, an operator-only path for
+  recording self-evolution improvement candidates as versioned JSON artifacts
+  under `artifacts/improvement-candidates/` by default. The command records an
+  audit event and leaves the candidate in `proposed` / review-pending state; it
+  does not run acceptance gates or apply behavior changes.
+- Moved the stale bootstrap execution plan from
+  `docs/exec-plans/active/0001-project-bootstrap.md` to
+  `docs/exec-plans/completed/0001-project-bootstrap.md` and marked its outcome
+  complete.
+- Reflected whole-code review and expert feedback across the operator and
+  self-evolution safety boundary: ADW query/smoke durable audit records omit
+  arbitrary response rows, SQL file/stdin inputs are byte-bounded before decode,
+  SQLcl process cleanup keeps a captured process-group id for child cleanup,
+  wallet/DSN/TNS/connection-string redaction is stricter while status booleans
+  remain readable, non-finite candidate confidence values are rejected, and
+  behavior-shaping candidate type checks cannot be hidden behind docs-only
+  candidates.
+- Switched the documented verification path to pytest from the repository root
+  and added `pyproject.toml` pytest pythonpath configuration. Latest checks
+  passed: focused pytest 96 tests / 84 subtests, full pytest 207 tests / 103
+  subtests, root `uv run pytest -q`, compileall, and `git diff --check`.
+- Completed final security/code, QA, and PM reviews for this hardening pass.
+  The reviews found no blocking code issues; PM verdict was conditional ship
+  after updating tracking and handoff documentation.

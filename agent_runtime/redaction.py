@@ -13,7 +13,17 @@ SENSITIVE_KEY_PARTS = (
     "TOKEN",
     "API_KEY",
     "PRIVATE_KEY",
-    "WALLET_PASS",
+)
+
+# These terms are sensitive wherever they appear in a key (for example
+# oracleDsn, tns_admin, wallet_location). Non-secret status booleans using these
+# words are preserved by redact() so diagnostics such as wallet_path_exists stay
+# useful while actual string values are hidden.
+SENSITIVE_KEY_SUBSTRINGS = (
+    "DSN",
+    "TNS",
+    "WALLET",
+    "CONNECTION_STRING",
 )
 
 REDACTION = "[REDACTED]"
@@ -22,7 +32,7 @@ REDACTION = "[REDACTED]"
 def redact(value: Any) -> Any:
     if isinstance(value, dict):
         return {
-            key: REDACTION if _is_sensitive_key(key) else redact(item)
+            key: _redact_sensitive_key_value(item) if _is_sensitive_key(key) else redact(item)
             for key, item in value.items()
         }
     if isinstance(value, list):
@@ -34,8 +44,16 @@ def redact(value: Any) -> Any:
     return value
 
 
+def _redact_sensitive_key_value(value: Any) -> Any:
+    if isinstance(value, bool) or value is None:
+        return value
+    return REDACTION
+
+
 def _is_sensitive_key(key: str) -> bool:
     upper = key.upper()
+    if any(part in upper for part in SENSITIVE_KEY_SUBSTRINGS):
+        return True
     return any(
         upper == part
         or upper.startswith(f"{part}_")

@@ -24,7 +24,7 @@ from agent_runtime.oracle_adw import (
     verify_sqlcl,
     verify_wallet_paths,
 )
-from agent_runtime.redaction import REDACTION
+from agent_runtime.redaction import REDACTION, redact
 
 
 class OracleAdwConfigTests(unittest.TestCase):
@@ -46,13 +46,52 @@ class OracleAdwConfigTests(unittest.TestCase):
         self.assertEqual("/opt/sqlcl/bin/sql", config.sqlcl_path)
         status = config.redacted_status()
         self.assertTrue(status["db_user_pass_configured"])
+        self.assertTrue(status["db_wallet_path_configured"])
+        self.assertTrue(status["db_wallet_file_configured"])
         self.assertNotIn("db-secret", str(status))
+        self.assertNotIn("/wallet", str(status))
 
         redacted = config.to_redacted_dict()
         self.assertEqual(REDACTION, redacted["admin_user_pass"])
         self.assertEqual(REDACTION, redacted["db_user_pass"])
         self.assertEqual(REDACTION, redacted["db_wallet_pass"])
         self.assertEqual(REDACTION, redacted["db_dsn"])
+
+    def test_generic_redaction_masks_dsn_tns_wallet_and_connection_string_keys(self):
+        payload = {
+            "DB_DSN": "adw-secret-service",
+            "tns_admin": "/wallet/secret-path",
+            "wallet_location": "/wallet/secret-path",
+            "connection_string": "readonly/db-secret@adw-secret-service",
+            "nested": {
+                "oracleDsn": "another-secret-service",
+                "TNS_ALIAS": "prod_high",
+            },
+        }
+
+        redacted = redact(payload)
+
+        self.assertEqual(REDACTION, redacted["DB_DSN"])
+        self.assertEqual(REDACTION, redacted["tns_admin"])
+        self.assertEqual(REDACTION, redacted["wallet_location"])
+        self.assertEqual(REDACTION, redacted["connection_string"])
+        self.assertEqual(REDACTION, redacted["nested"]["oracleDsn"])
+        self.assertEqual(REDACTION, redacted["nested"]["TNS_ALIAS"])
+
+    def test_generic_redaction_preserves_sensitive_status_booleans(self):
+        redacted = redact(
+            {
+                "wallet_path_exists": True,
+                "wallet_path_is_dir": False,
+                "db_dsn_configured": True,
+                "db_wallet_path": "/wallet/secret-path",
+            }
+        )
+
+        self.assertIs(redacted["wallet_path_exists"], True)
+        self.assertIs(redacted["wallet_path_is_dir"], False)
+        self.assertIs(redacted["db_dsn_configured"], True)
+        self.assertEqual(REDACTION, redacted["db_wallet_path"])
 
 
 class OracleAdwSqlclTests(unittest.TestCase):
@@ -105,6 +144,25 @@ class OracleAdwSqlclTests(unittest.TestCase):
 
         self.assertFalse(status.ok)
         self.assertFalse(status.exists)
+        self.assertFalse(status.version_checked)
+        self.assertFalse(called)
+
+    def test_sqlcl_verification_rejects_configured_relative_path(self):
+        called = False
+
+        def runner(command: list[str]) -> SqlclRunResult:
+            nonlocal called
+            called = True
+            return SqlclRunResult(returncode=0)
+
+        status = verify_sqlcl(
+            OracleAdwConfig(sqlcl_path="relative/sql"),
+            runner=runner,
+            path_lookup=lambda name: f"/resolved/{name}",
+        )
+
+        self.assertFalse(status.ok)
+        self.assertEqual("sqlcl_path_must_be_absolute", status.error)
         self.assertFalse(status.version_checked)
         self.assertFalse(called)
 
@@ -251,6 +309,20 @@ class OracleAdwSqlclExecutionBoundaryTests(unittest.TestCase):
                 "select * from customers",
             )
 
+    def test_execution_plan_rejects_relative_sqlcl_path(self):
+        config = OracleAdwConfig(
+            sqlcl_path="sql",
+            db_user="agent_ro",
+            db_user_pass="db-secret",
+            db_dsn="adw-service",
+        )
+
+        with self.assertRaises(ValueError) as raised:
+            build_read_only_sqlcl_execution_plan(config, "select * from customers")
+
+        self.assertIn("SQLCL_PATH", str(raised.exception))
+        self.assertIn("absolute", str(raised.exception))
+
     def test_execution_plan_rejects_control_characters_before_rendering_stdin(self):
         rejected_values = [
             (
@@ -383,6 +455,35 @@ class OracleAdwSqlclExecutionBoundaryTests(unittest.TestCase):
         self.assertNotIn("adw-secret-service", audit_text)
         self.assertNotIn("wallet-secret", audit_text)
         self.assertEqual(REDACTION, audit["execution"]["stdin"])
+
+    def test_success_audit_record_summarizes_result_without_rows(self):
+        config = OracleAdwConfig(
+            sqlcl_path="/opt/sqlcl/bin/sql",
+            db_user="agent_ro",
+            db_user_pass="db-secret",
+            db_dsn="adw-secret-service",
+        )
+        plan = build_read_only_sqlcl_execution_plan(config, "select * from customers")
+        outcome = classify_sqlcl_read_only_result(
+            plan,
+            SqlclRunResult(
+                returncode=0,
+                stdout=(
+                    '{"columns":[{"name":"CUSTOMER_ID"},{"name":"EMAIL"}],'
+                    '"items":[{"CUSTOMER_ID":1,"EMAIL":"customer@example.com"}]}'
+                ),
+            ),
+        )
+
+        audit = build_redacted_sqlcl_audit_record("oracle_adw.read_only_query", plan, outcome)
+        rendered = str(audit)
+
+        self.assertIn("outcome", audit)
+        self.assertNotIn("rows", rendered)
+        self.assertNotIn("customer@example.com", rendered)
+        self.assertEqual(1, audit["outcome"]["result"]["row_count"])
+        self.assertEqual(2, audit["outcome"]["result"]["column_count"])
+        self.assertEqual(("CUSTOMER_ID", "EMAIL"), audit["outcome"]["result"]["columns"])
 
     def test_timeout_error_is_redacted_and_real_execution_remains_closed(self):
         config = OracleAdwConfig(

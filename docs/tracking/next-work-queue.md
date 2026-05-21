@@ -372,16 +372,44 @@ or drift result objects unless they cover every configured frozen case, include
 the manifest `golden_fixture` version, and include the configured drift fixture
 id, path, SHA-256 hash, and case ids.
 
+## Completed Operator Candidate Recording And Safety Hardening Wave
+
+Added the first operator-only candidate recording path and reflected whole-code
+review findings without opening automatic self-modification:
+
+1. `bin/agent operator propose-improvement` records proposed improvement
+   candidates under the configured artifact directory and writes an operator
+   audit event.
+2. Candidate artifacts stay in `proposed` / review-pending state. The command
+   does not run acceptance gates, approve reviews, edit behavior artifacts, or
+   apply changes.
+3. Candidate confidence rejects non-finite values such as `NaN` and infinity.
+4. Candidate type checks now block behavior-shaping artifact changes from
+   hiding behind `docs` candidates, and gate reports reject mismatched drift
+   schema versions.
+5. Operator ADW audit payloads omit arbitrary response rows on query and smoke
+   paths; durable audit keeps row counts and summary fields instead.
+6. SQL file and stdin inputs are bounded before decoding, and invalid UTF-8 is
+   rejected explicitly.
+7. SQLcl timeout/output-limit cleanup stores the process-group id at launch so
+   child processes can still be terminated if the group leader exits first.
+8. Wallet, DSN, TNS, and connection-string redaction is stricter while boolean
+   configuration status fields remain readable.
+
+Expert and PM review status: latest security/code and QA reviews found no
+blocking issues after this hardening pass. PM verdict was conditional ship after
+updating tracking docs and next-work guidance.
+
 ## Next Implementation Wave
 
 Choose the next Milestone 7 hardening slice:
 
-1. Add an operator-only candidate recording command that appends reviewed
-   improvement candidates to an audit or artifact path without applying them.
-2. Add JSON Schema files for self-evolution artifacts if external tools will
+1. Add JSON Schema files for self-evolution artifacts if external tools will
    produce candidates, memory records, rollback plans, or drift fixtures.
-3. Add candidate hash/signature fields before any persisted candidate can
+2. Add candidate hash/signature fields before any persisted candidate can
    become an input to an apply workflow.
+3. Define candidate review/approval CLI or workflow states, including reviewer
+   identity, timestamps, reject/change-request states, and audit records.
 4. Add rollback execution design only after artifact hashes and reviewer
    identity are defined.
 5. Keep automatic self-modification, prompt rewrites, policy rewrites, memory
@@ -390,12 +418,9 @@ Choose the next Milestone 7 hardening slice:
 ## Verification Commands
 
 ```bash
-UV_CACHE_DIR=.uv-cache uv run --python 3.13 python -m unittest tests.test_tools tests.test_runtime_controls
-UV_CACHE_DIR=.uv-cache uv run --python 3.13 python -m unittest tests.test_workflow_engine tests.test_eval_runner
-UV_CACHE_DIR=.uv-cache uv run --python 3.13 python -m unittest tests.test_oracle_adw
-UV_CACHE_DIR=.uv-cache uv run --python 3.13 python -m unittest tests.test_schema_context
-UV_CACHE_DIR=.uv-cache uv run --python 3.13 python -m unittest tests.test_sql_execution
-UV_CACHE_DIR=.uv-cache uv run --python 3.13 python -m unittest tests.test_sqlcl_runner
-UV_CACHE_DIR=.uv-cache uv run --python 3.13 python -m unittest tests.test_query_plan
-UV_CACHE_DIR=.uv-cache uv run --python 3.13 python -m unittest discover -s tests
+uv run --python 3.13 python -m pytest tests/test_cli.py tests/test_oracle_adw.py tests/test_self_evolution.py tests/test_sql_execution.py tests/test_sqlcl_runner.py -q
+uv run --python 3.13 python -m pytest -q
+uv run pytest -q
+uv run --python 3.13 python -m compileall -q agent_runtime tests
+git diff --check
 ```

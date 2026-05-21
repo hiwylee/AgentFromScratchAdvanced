@@ -12,13 +12,17 @@ from agent_runtime.self_evolution import (
     IMPROVEMENT_CANDIDATE_SCHEMA_VERSION,
     MEMORY_RECORD_SCHEMA_VERSION,
     ROLLBACK_PLAN_SCHEMA_VERSION,
+    ArtifactChange,
     ImprovementCandidateRecord,
     MemoryRecord,
     RollbackPlan,
+    build_improvement_candidate,
     evaluate_self_evolution_gate,
     load_drift_cases,
+    load_improvement_candidate,
     load_memory_record,
     run_drift_checks,
+    write_improvement_candidate,
 )
 from agent_runtime.trace import ArtifactVersions
 
@@ -64,6 +68,62 @@ class SelfEvolutionTests(unittest.TestCase):
         self.assertEqual("approved", candidate.review.decision)
         self.assertEqual("eval_failure", candidate.trigger_type)
         self.assertEqual("artifacts/prompts/intent-classifier.md", candidate.affected_artifacts[0].path)
+
+    def test_build_and_write_improvement_candidate_keeps_candidate_proposed(self):
+        candidate = build_improvement_candidate(
+            candidate_id="candidate-docs-001",
+            candidate_type="docs",
+            trigger_type="operator_note",
+            summary="Clarify runbook note.",
+            proposed_change="Add one troubleshooting sentence.",
+            affected_artifacts=(
+                ArtifactChange(
+                    path="docs/runbooks/operator-adw.md",
+                    artifact_type="docs",
+                    current_version="1",
+                    proposed_version="2",
+                ),
+            ),
+            source_type="operator_note",
+            source_id="manual-session",
+            author="unit-test",
+            confidence=0.7,
+            evidence=("tests/test_self_evolution.py",),
+            risk_level="low",
+        )
+
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "candidate-docs-001.json"
+            write_improvement_candidate(candidate, path)
+            loaded = load_improvement_candidate(path)
+
+        self.assertEqual("proposed", loaded.status)
+        self.assertEqual("pending", loaded.review.decision)
+        self.assertEqual("pending", loaded.provenance.review_status)
+        self.assertEqual("docs/runbooks/operator-adw.md", loaded.affected_artifacts[0].path)
+
+    def test_build_improvement_candidate_rejects_non_finite_confidence(self):
+        with self.assertRaisesRegex(ValueError, "confidence must be a finite number"):
+            build_improvement_candidate(
+                candidate_id="candidate-docs-001",
+                candidate_type="docs",
+                trigger_type="operator_note",
+                summary="Clarify runbook note.",
+                proposed_change="Add one troubleshooting sentence.",
+                affected_artifacts=(
+                    ArtifactChange(
+                        path="docs/runbooks/operator-adw.md",
+                        artifact_type="docs",
+                        current_version="1",
+                        proposed_version="2",
+                    ),
+                ),
+                source_type="operator_note",
+                source_id="manual-session",
+                author="unit-test",
+                confidence=float("nan"),
+                risk_level="low",
+            )
 
     def test_candidate_validation_rejects_missing_artifacts(self):
         payload = _candidate_payload()
@@ -190,6 +250,62 @@ class SelfEvolutionTests(unittest.TestCase):
         rendered = " ".join(report.reasons)
         self.assertIn("drift result fixture_id", rendered)
         self.assertIn("drift result fixture_path", rendered)
+
+    def test_acceptance_gate_blocks_docs_candidate_with_behavior_shaping_artifact(self):
+        payload = _candidate_payload()
+        payload["candidate_type"] = "docs"
+        payload["candidate_id"] = "candidate-docs-mixed-001"
+        payload["affected_artifacts"].insert(
+            0,
+            {
+                "path": "docs/runbooks/operator-adw.md",
+                "artifact_type": "docs",
+                "current_version": "1",
+                "proposed_version": "2",
+            },
+        )
+        candidate = ImprovementCandidateRecord.from_dict(payload)
+        rollback_payload = _rollback_payload()
+        rollback_payload["candidate_id"] = candidate.candidate_id
+        rollback_payload["artifacts"].insert(
+            0,
+            {
+                "path": "docs/runbooks/operator-adw.md",
+                "artifact_type": "docs",
+                "version_before": "1",
+                "version_after": "2",
+                "rollback_source_path": "docs/runbooks/operator-adw.md@version:1",
+            },
+        )
+        rollback = RollbackPlan.from_dict(rollback_payload)
+
+        report = evaluate_self_evolution_gate(
+            candidate,
+            rollback_plan=rollback,
+            eval_result=_full_eval_result(passed=True),
+            drift_result=_full_drift_result(passed=True),
+        )
+
+        self.assertFalse(report.passed)
+        rendered = " ".join(report.reasons)
+        self.assertIn("docs candidates may only affect docs artifacts", rendered)
+        self.assertIn("candidate_type must match all affected artifact types", rendered)
+
+    def test_acceptance_gate_blocks_unsupported_drift_result_schema_version(self):
+        candidate = ImprovementCandidateRecord.from_dict(_candidate_payload())
+        rollback = RollbackPlan.from_dict(_rollback_payload())
+        drift_result = replace(_full_drift_result(passed=True), schema_version="agent-runtime.drift-result.v0")
+
+        report = evaluate_self_evolution_gate(
+            candidate,
+            rollback_plan=rollback,
+            eval_result=_full_eval_result(passed=True),
+            drift_result=drift_result,
+        )
+
+        self.assertFalse(report.passed)
+        rendered = " ".join(report.reasons)
+        self.assertIn("drift result schema_version is unsupported", rendered)
 
     def test_drift_fixture_runs_repeated_prompts_without_signature_drift(self):
         fixture_id, cases = load_drift_cases(DRIFT_FIXTURE)

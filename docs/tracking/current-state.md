@@ -308,13 +308,24 @@ Oracle ADW natural-language data access as the first domain specialization.
 - Added startup repository freshness checks to `AGENTS.md` and `CLAUDE.md` so
   future sessions must compare repo-server state, upstream commits, and local
   worktree changes before implementation.
+- Added `bin/agent operator propose-improvement` for operator-only recording
+  of self-evolution improvement candidates. It writes proposed candidate JSON,
+  records audit, leaves review/provenance pending, and does not run gates or
+  apply behavior changes.
+- Moved the completed bootstrap execution plan from
+  `docs/exec-plans/active/` to `docs/exec-plans/completed/`.
+- Reflected the latest whole-code review and expert/PM feedback. Operator ADW
+  audit records now omit arbitrary response rows consistently, SQLcl process
+  cleanup keeps a captured process-group id for timeout/output-limit cleanup,
+  SQL file/stdin reads are byte-bounded, non-finite self-evolution confidence
+  values are rejected, behavior-shaping candidate type checks are stricter, and
+  pytest can run from the repository root through `pyproject.toml`.
 
 ## Next Action
 
-Next implementation focus moves past the first Milestone 7 control boundary:
+Next implementation focus moves past the first Milestone 7 operator recording
+and hardening boundary:
 
-- decide whether to add an operator-only command for recording improvement
-  candidates, or keep candidate creation fixture/manual-only for another wave;
 - optionally run a live LLM smoke after setting `OPENAI_API_KEY`:
 
 ```bash
@@ -323,11 +334,16 @@ bin/agent ask "hello" --model-provider openai --run-dir /tmp/afs-llm-smoke --aud
 
 - add JSON Schema files for the self-evolution artifacts if external producers
   will write them directly;
+- define candidate artifact hash/signature and reviewer identity fields before
+  persisted candidates can feed an apply workflow;
+- design candidate review/approval and rollback execution flows before opening
+  any behavior-change apply path;
+- define the next active execution plan before starting another implementation
+  wave;
 - broaden drift fixtures only after a concrete prompt, policy, or memory change
   candidate needs coverage;
-- keep automatic self-modification closed until candidate persistence,
-  reviewer identity, artifact signing or hashes, and rollback execution are
-  designed.
+- keep automatic self-modification closed until reviewer identity, artifact
+  signing or hashes, and rollback execution are designed.
 
 Persistent workflow approval/resume and real target-system writes must remain
 closed until signed or hashed checkpoint persistence, approval authorization,
@@ -340,19 +356,36 @@ explanations, and default tools must not enable live execution.
 
 Recommended starting point:
 
-- uv-managed Python 3.13+ prototype first, with Rust hardening later if needed.
-- Mock-model-first agent loop and deterministic intent heuristics for the
-  initial slice.
-- Prompt, policy, memory, and eval artifacts stored as data files.
-- Append-only audit events from the first executable milestone.
-- `agent ask <text>` should first prove structured intent analysis and next
-  action selection.
-- Oracle ADW connector design kept behind an interface until the core loop is
-  testable.
+- Open `agent_runtime/self_evolution.py`, `agent_runtime/cli.py`,
+  `agent_runtime/sqlcl_runner.py`, and `tests/test_cli.py` before continuing
+  self-evolution or operator safety hardening.
+- If adding external candidate producers, create JSON Schema files for
+  improvement candidates, rollback plans, memory records, drift fixtures, and
+  gate reports.
+- Keep `agent ask`, schema context, query planning, and fake result explanation
+  paths non-live unless a future reviewed plan explicitly changes that boundary.
 
 ## Last Verification
 
-Most recent Python 3.13 normalization check:
+Most recent focused and full checks after the expert/PM hardening pass:
+
+```bash
+uv run --python 3.13 python -m pytest tests/test_cli.py tests/test_oracle_adw.py tests/test_self_evolution.py tests/test_sql_execution.py tests/test_sqlcl_runner.py -q
+uv run --python 3.13 python -m pytest -q
+uv run pytest -q
+uv run --python 3.13 python -m compileall -q agent_runtime tests
+git diff --check
+```
+
+Result: focused tests passed 96 tests and 84 subtests; the full pytest suite
+passed 207 tests and 103 subtests; root `uv run pytest -q` passed; compileall
+and whitespace checks passed.
+
+Latest review status: independent security/code and QA reviews found no
+blocking issues after the hardening pass. The PM verdict was conditional ship:
+code is shippable, with documentation/tracking updated here before handoff.
+
+Previous Python 3.13 normalization check:
 
 ```bash
 UV_CACHE_DIR=.uv-cache uv run --no-dev --python 3.13 python -m unittest tests.test_self_evolution
