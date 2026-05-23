@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass, field
-from typing import Dict, List
+from typing import Any, Dict, List, Protocol
+
+from agent_runtime.types import IntentResult, IntentRoute
 
 
 WRITE_KEYWORDS = (
@@ -229,3 +231,92 @@ def _db_task_type(text: str) -> str:
     if any(keyword in text for keyword in ("스키마", "schema", "테이블", "table")):
         return "metadata_exploration"
     return "lookup"
+
+
+# ---------------------------------------------------------------------------
+# P1: IntentClassifier protocol + KeywordIntentClassifier (L1 fast-path)
+# ---------------------------------------------------------------------------
+
+_ROUTE_CAPABILITIES: dict[str, list[str]] = {
+    "database_analysis": ["oracle_sh.schema.read", "oracle_sh.data.read"],
+    "business_workflow": ["core.workflow.run"],
+    "general_answer": [],
+    "unknown": [],
+}
+
+_WRITE_CAPABILITIES: list[str] = ["oracle_sh.data.write"]
+
+
+class IntentClassifier(Protocol):
+    """Classify user text into an IntentResult.
+
+    context is an opaque dict for now; will be typed as SessionContext in P5.
+    """
+
+    def classify(self, text: str, context: dict[str, Any] | None = None) -> IntentResult:
+        ...
+
+
+class KeywordIntentClassifier:
+    """L1 fast-path: wraps analyze_user_intent() and converts to IntentResult.
+
+    Preserves full backward compatibility — all existing callers of
+    analyze_user_intent() are unaffected.
+    """
+
+    def classify(self, text: str, context: dict[str, Any] | None = None) -> IntentResult:
+        intent = analyze_user_intent(text)
+
+        route: IntentRoute
+        if intent.intent_type == "database_analysis":
+            route = "database_analysis"
+        elif intent.intent_type == "workflow_execution":
+            route = "business_workflow"
+        else:
+            route = "general_answer"
+
+        if intent.safety_level == "blocked_write_request":
+            capabilities = _WRITE_CAPABILITIES[:]
+        else:
+            capabilities = _ROUTE_CAPABILITIES[route][:]
+
+        slots: dict[str, Any] = {k: v for k, v in intent.entities.items() if v}
+
+        return IntentResult(
+            capabilities=capabilities,
+            slots=slots,
+            primary_route=route,
+            confidence=1.0,
+            rationale=f"keyword match: route={route}, task={intent.task_type}",
+            alternatives=[],
+            needs_clarification=bool(intent.ambiguities),
+            clarification_prompt=None,
+        )
+
+    def from_user_intent(self, intent: UserIntent) -> IntentResult:
+        """Convert an already-classified UserIntent to IntentResult (no re-classification)."""
+        route: IntentRoute
+        if intent.intent_type == "database_analysis":
+            route = "database_analysis"
+        elif intent.intent_type == "workflow_execution":
+            route = "business_workflow"
+        else:
+            route = "general_answer"
+
+        if intent.safety_level == "blocked_write_request":
+            capabilities = _WRITE_CAPABILITIES[:]
+        else:
+            capabilities = _ROUTE_CAPABILITIES[route][:]
+
+        slots: dict[str, Any] = {k: v for k, v in intent.entities.items() if v}
+
+        return IntentResult(
+            capabilities=capabilities,
+            slots=slots,
+            primary_route=route,
+            confidence=1.0,
+            rationale=f"keyword match: route={route}, task={intent.task_type}",
+            alternatives=[],
+            needs_clarification=bool(intent.ambiguities),
+            clarification_prompt=None,
+        )

@@ -43,6 +43,7 @@ class AgentResult:
     audit_path: str
 
     query_plan: dict[str, object] | None = None
+    plan_shadow: dict[str, object] | None = None
 
     def to_dict(self) -> dict[str, object]:
         result: dict[str, object] = {
@@ -56,6 +57,8 @@ class AgentResult:
         }
         if self.query_plan is not None:
             result["query_plan"] = self.query_plan
+        if self.plan_shadow is not None:
+            result["plan_shadow"] = self.plan_shadow
         return result
 
 
@@ -193,9 +196,28 @@ class AgentLoop:
             return self._finish_stopped(monitor, intent_data, action, state, reason)
 
         final = _final_answer(action, query_plan=query_plan)
+
+        # Shadow mode: generate plan artifact without changing execution flow.
+        plan_shadow: dict[str, object] | None = None
+        try:
+            from .executor import StepExecutor
+            from .intent import KeywordIntentClassifier
+            from .planner import KeywordPlanner
+            intent_result = KeywordIntentClassifier().from_user_intent(intent)
+            plan = KeywordPlanner().build(intent_result, request_id=run_id)
+            shadow_results = StepExecutor().run_plan_shadow(plan)
+            plan_shadow = {
+                "plan": plan.to_dict(),
+                "step_results": [r.to_dict() for r in shadow_results],
+                "shadow_mode": True,
+            }
+            monitor.event("plan_shadow_recorded", {"plan_id": run_id, "steps": len(plan.steps)})
+        except Exception as exc:
+            monitor.event("plan_shadow_failed", {"error": str(exc)})
+
         monitor.finish("completed", {"final_answer": final.to_dict()})
         self._audit(run_id, "run_completed", {"final_answer": final.to_dict()})
-        return self._result(monitor, intent_data, action.to_dict(), final, query_plan=query_plan)
+        return self._result(monitor, intent_data, action.to_dict(), final, query_plan=query_plan, plan_shadow=plan_shadow)
 
     def _stop_state(
         self,
@@ -245,6 +267,7 @@ class AgentLoop:
         action: dict[str, object],
         final: FinalAnswer,
         query_plan: QueryPlanArtifact | None = None,
+        plan_shadow: dict[str, object] | None = None,
     ) -> AgentResult:
         return AgentResult(
             run_id=monitor.run_id,
@@ -255,6 +278,7 @@ class AgentLoop:
             events_path=str(monitor.events_path),
             audit_path=str(self.audit_path),
             query_plan=query_plan.to_dict() if query_plan is not None else None,
+            plan_shadow=plan_shadow,
         )
 
 

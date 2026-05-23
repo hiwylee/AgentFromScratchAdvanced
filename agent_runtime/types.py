@@ -9,6 +9,19 @@ from typing import Any, Literal
 
 
 Role = Literal["user", "assistant", "tool", "system"]
+FailureReason = Literal[
+    "missing_context",
+    "ambiguous_request",
+    "tool_error",
+    "policy_denied",
+    "data_mismatch",
+    "timeout",
+    "external_unavailable",
+    "budget_exceeded",
+    "unsafe_side_effect",
+    "schema_or_contract_mismatch",
+]
+SuggestedAction = Literal["retry", "use_alternative", "clarify", "proceed", "abort", "skip"]
 ActionKind = Literal[
     "final_answer",
     "ask_clarification",
@@ -16,6 +29,12 @@ ActionKind = Literal[
     "select_workflow",
     "refuse",
     "model_error",
+]
+IntentRoute = Literal[
+    "database_analysis",
+    "business_workflow",
+    "general_answer",
+    "unknown",
 ]
 RunState = Literal[
     "running",
@@ -73,6 +92,51 @@ class FinalAnswer:
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
+
+
+@dataclass
+class ConversationSlot:
+    """Short-term session slot — intentionally NOT a MemoryRecord.
+
+    Lives only for the duration of one session (in-memory + session.json).
+    Never passes through the self-evolution gate or review workflow.
+    """
+
+    key: str
+    value: Any
+    source_step_id: str
+    created_at: str = field(default_factory=utc_now)
+
+    def to_dict(self) -> dict[str, Any]:
+        return asdict(self)
+
+
+@dataclass(frozen=True)
+class IntentResult:
+    """Result of intent classification — capabilities/slots are drift-signature targets."""
+
+    # deterministic fields — included in drift signature
+    capabilities: list[str]
+    slots: dict[str, Any]
+    primary_route: IntentRoute
+
+    # non-deterministic fields — excluded from drift signature
+    confidence: float
+    rationale: str
+    alternatives: list[tuple[list[str], float]]
+    needs_clarification: bool
+    clarification_prompt: str | None = None
+
+    def to_dict(self) -> dict[str, Any]:
+        return asdict(self)
+
+    def signature_dict(self) -> dict[str, Any]:
+        """Deterministic subset for drift signature hashing."""
+        return {
+            "capabilities": sorted(self.capabilities),
+            "slots": self.slots,
+            "primary_route": self.primary_route,
+        }
 
 
 @dataclass(frozen=True)

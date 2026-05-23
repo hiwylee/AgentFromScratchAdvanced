@@ -21,7 +21,7 @@ from .loop import AgentLoop
 from .model import MockModel
 from .redaction import redact
 from .trace import ArtifactVersions, SecretLeakError, TraceRecord, assert_no_known_secret_values, write_trace
-from .types import utc_now
+from .types import IntentResult, utc_now
 
 
 IMPROVEMENT_CANDIDATE_SCHEMA_VERSION = "agent-runtime.improvement-candidate.v1"
@@ -737,17 +737,42 @@ def _file_sha256(path: Path) -> str:
     return sha256(path.read_bytes()).hexdigest()
 
 
+def _intent_signature(intent: Any) -> dict[str, Any]:
+    """Extract the deterministic subset of an intent for drift hashing.
+
+    Handles two shapes:
+    - IntentResult instance: use .signature_dict() directly.
+    - dict with 'capabilities' key (serialized IntentResult): keep only
+      capabilities, slots, primary_route; drop confidence, rationale,
+      alternatives, clarification_prompt, needs_clarification.
+    - Legacy UserIntent dict (no 'capabilities' key): keep all fields
+      as before for backward compatibility.
+    """
+    if isinstance(intent, IntentResult):
+        return intent.signature_dict()
+    if isinstance(intent, Mapping) and "capabilities" in intent:
+        return {
+            "capabilities": sorted(intent.get("capabilities") or []),
+            "slots": intent.get("slots"),
+            "primary_route": intent.get("primary_route"),
+        }
+    # Legacy UserIntent path — keep existing fields unchanged.
+    if not isinstance(intent, Mapping):
+        return {}
+    return {
+        "intent_type": intent.get("intent_type"),
+        "task_type": intent.get("task_type"),
+        "safety_level": intent.get("safety_level"),
+        "next_action": intent.get("next_action"),
+    }
+
+
 def _trace_signature(trace_data: Mapping[str, Any]) -> dict[str, Any]:
     tool_output = _first_tool_output(trace_data.get("events", []))
     query_plan = tool_output.get("query_plan", {}) if isinstance(tool_output, Mapping) else {}
     result_explanation = tool_output.get("result_explanation", {}) if isinstance(tool_output, Mapping) else {}
     signature = {
-        "intent": {
-            "intent_type": _get_path(trace_data, ("intent", "intent_type")),
-            "task_type": _get_path(trace_data, ("intent", "task_type")),
-            "safety_level": _get_path(trace_data, ("intent", "safety_level")),
-            "next_action": _get_path(trace_data, ("intent", "next_action")),
-        },
+        "intent": _intent_signature(trace_data.get("intent")),
         "action": {
             "kind": _get_path(trace_data, ("action", "kind")),
         },

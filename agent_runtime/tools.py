@@ -13,9 +13,10 @@ from .redaction import redact
 from .result_explanation import build_fake_result_explanation
 from .schema_context import build_compact_schema_context, load_schema_artifacts
 from .sql_execution import FakeSqlExecutionAdapter
+from .types import Action
 
 
-ToolState = Literal["completed", "failed", "invalid", "blocked"]
+ToolState = Literal["completed", "failed", "invalid", "blocked", "timed_out"]
 ToolArgType = Literal["string", "integer", "number", "boolean", "object", "array"]
 ToolHandler = Callable[[dict[str, Any]], dict[str, Any]]
 
@@ -51,6 +52,8 @@ class ToolSpec:
     parameters: tuple[ToolParameter, ...] = ()
     risk_level: Literal["low", "medium", "high"] = "low"
     read_only: bool = True
+    capabilities: tuple[str, ...] = ()
+    cost_estimate: Literal["fast", "medium", "slow"] = "fast"
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -59,6 +62,8 @@ class ToolSpec:
             "parameters": [parameter.to_dict() for parameter in self.parameters],
             "risk_level": self.risk_level,
             "read_only": self.read_only,
+            "capabilities": list(self.capabilities),
+            "cost_estimate": self.cost_estimate,
         }
 
 
@@ -126,6 +131,9 @@ class ToolRegistry:
     def specs(self) -> list[dict[str, Any]]:
         return [registered.spec.to_dict() for registered in self._tools.values()]
 
+    def all_registered(self) -> list[RegisteredTool]:
+        return list(self._tools.values())
+
     def validate_call(self, call: ToolCall) -> list[str]:
         try:
             registered = self.get(call.name)
@@ -175,6 +183,8 @@ def default_tool_registry() -> ToolRegistry:
             ),
             risk_level="low",
             read_only=True,
+            capabilities=("oracle_sh.schema.read",),
+            cost_estimate="fast",
         ),
         _mock_schema_context,
     )
@@ -276,6 +286,40 @@ def _policy_error(spec: ToolSpec, context: ToolExecutionContext) -> str:
     if spec.risk_level == "high" and spec.name not in set(context.approved_high_risk_tools):
         return "high_risk_tool_requires_explicit_approval"
     return ""
+
+
+def find_tools_by_capabilities(
+    registry: ToolRegistry,
+    required: list[str],
+    action: Action | None = None,
+) -> list[ToolSpec]:
+    """Return tools whose capabilities intersect with required.
+
+    When action is provided, each candidate is checked via _policy_error();
+    tools that fail the policy gate are excluded from results.
+    When action is None (discovery/test mode), policy check is skipped —
+    callers must still pass through ToolRunner.run() before actual execution.
+    capabilities are a recommendation signal, not a policy bypass.
+    """
+    if not required:
+        return []
+    required_set = set(required)
+    results: list[ToolSpec] = []
+    for registered in registry.all_registered():
+        spec = registered.spec
+        if not spec.capabilities:
+            continue
+        if not required_set.isdisjoint(spec.capabilities):
+            if action is None:
+                results.append(spec)
+            else:
+                context = ToolExecutionContext(
+                    run_id="capability-check",
+                    audit_path=Path("/dev/null"),
+                )
+                if not _policy_error(spec, context):
+                    results.append(spec)
+    return results
 
 
 def _matches_type(value: Any, expected: ToolArgType) -> bool:

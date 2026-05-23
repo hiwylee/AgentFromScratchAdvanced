@@ -1,0 +1,119 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "ExecutionPlan",
+  "description": "Deterministic execution plan produced by KeywordPlanner.",
+  "type": "object",
+  "required": ["request_id", "goal", "primary_route", "steps"],
+  "additionalProperties": false,
+  "properties": {
+    "request_id": {
+      "type": "string",
+      "description": "Unique identifier for the originating request."
+    },
+    "goal": {
+      "type": "string",
+      "description": "Human-readable goal statement for this plan."
+    },
+    "primary_route": {
+      "type": "string",
+      "description": "Routing key derived from IntentResult.primary_route."
+    },
+    "steps": {
+      "type": "array",
+      "description": "Ordered list of plan steps.",
+      "items": {
+        "$ref": "#/definitions/PlanStep"
+      }
+    },
+    "assumptions": {
+      "type": "array",
+      "description": "Assumptions made during plan construction.",
+      "items": {
+        "type": "string"
+      },
+      "default": []
+    }
+  },
+  "definitions": {
+    "PlanStep": {
+      "type": "object",
+      "required": [
+        "step_id",
+        "description",
+        "required_capabilities",
+        "primary_capability",
+        "depends_on",
+        "success_criteria",
+        "expected_output",
+        "retry_policy",
+        "risk_level",
+        "requires_approval",
+        "fallback_strategy"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "step_id": {
+          "type": "string",
+          "description": "Unique identifier for this step within the plan."
+        },
+        "description": {
+          "type": "string",
+          "description": "Human-readable description of what this step does."
+        },
+        "required_capabilities": {
+          "type": "array",
+          "description": "Capabilities required to execute this step.",
+          "items": {
+            "type": "string"
+          }
+        },
+        "primary_capability": {
+          "type": "string",
+          "description": "Primary capability used for tool selection tie-breaking."
+        },
+        "depends_on": {
+          "type": "array",
+          "description": "step_id values that must complete before this step runs.",
+          "items": {
+            "type": "string"
+          }
+        },
+        "success_criteria": {
+          "type": "array",
+          "description": "Criteria expressions that must hold for the step to be considered successful.",
+          "items": {
+            "type": "string"
+          }
+        },
+        "expected_output": {
+          "type": "string",
+          "description": "Human-readable description of the expected output."
+        },
+        "retry_policy": {
+          "type": "object",
+          "description": "Retry configuration for this step.",
+          "properties": {
+            "max_attempts": {
+              "type": "integer",
+              "minimum": 1
+            }
+          }
+        },
+        "risk_level": {
+          "type": "string",
+          "enum": ["low", "medium", "high"],
+          "description": "Risk classification for this step."
+        },
+        "requires_approval": {
+          "type": "boolean",
+          "description": "Whether human approval is required before execution."
+        },
+        "fallback_strategy": {
+          "type": "string",
+          "enum": ["retry", "skip", "clarify", "abort"],
+          "description": "What to do if this step fails."
+        }
+      }
+    }
+  }
+}

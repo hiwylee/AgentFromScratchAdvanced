@@ -1,0 +1,80 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "SessionContext",
+  "description": "Schema for the state.json file persisted by SessionContext.save()",
+  "type": "object",
+  "required": ["session_id", "redaction_status", "instruction_sources", "slots", "budget"],
+  "properties": {
+    "session_id": {
+      "type": "string",
+      "description": "Unique identifier for this session"
+    },
+    "redaction_status": {
+      "type": "string",
+      "enum": ["clean", "sanitized"],
+      "description": "Whether session content has been redacted"
+    },
+    "instruction_sources": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "List of instruction source identifiers"
+    },
+    "slots": {
+      "type": "object",
+      "description": "Named conversation slots captured during the session",
+      "additionalProperties": {
+        "$ref": "#/$defs/ConversationSlot"
+      }
+    },
+    "budget": {
+      "oneOf": [
+        { "type": "null" },
+        { "$ref": "#/$defs/BudgetTracker" }
+      ],
+      "description": "Budget tracker snapshot, or null if no budget was set"
+    }
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "ConversationSlot": {
+      "type": "object",
+      "required": ["key", "value", "source_step_id", "captured_at"],
+      "properties": {
+        "key": { "type": "string" },
+        "value": {},
+        "source_step_id": { "type": "string" },
+        "captured_at": { "type": "string", "format": "date-time" }
+      },
+      "additionalProperties": false
+    },
+    "BudgetTracker": {
+      "type": "object",
+      "required": ["tokens_used", "cost_used_usd", "tool_retries", "initial"],
+      "properties": {
+        "tokens_used": { "type": "integer", "minimum": 0 },
+        "cost_used_usd": { "type": "number", "minimum": 0.0 },
+        "tool_retries": { "type": "integer", "minimum": 0 },
+        "initial": { "$ref": "#/$defs/Budget" }
+      },
+      "additionalProperties": false
+    },
+    "Budget": {
+      "type": "object",
+      "required": [
+        "max_steps",
+        "timeout_seconds",
+        "token_budget",
+        "cost_budget_usd",
+        "row_budget"
+      ],
+      "properties": {
+        "max_steps": { "type": "integer", "minimum": 1 },
+        "timeout_seconds": { "type": "number", "minimum": 0.0 },
+        "token_budget": { "type": "integer", "minimum": 0 },
+        "cost_budget_usd": { "type": "number", "minimum": 0.0 },
+        "row_budget": { "type": "integer", "minimum": 0 }
+      },
+      "additionalProperties": false
+    }
+  }
+}
