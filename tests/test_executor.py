@@ -4,6 +4,8 @@ import unittest
 from agent_runtime.executor import StepExecutor, StepResult
 from agent_runtime.planner import ExecutionPlan, KeywordPlanner
 from agent_runtime.types import IntentResult
+from agent_runtime.tools import ToolResult
+from agent_runtime.verifier import VerificationResult
 
 
 def _intent(route: str) -> IntentResult:
@@ -65,6 +67,97 @@ class StepExecutorShadowTests(unittest.TestCase):
         self.assertIn("skipped", d)
         self.assertIn("error", d)
         self.assertTrue(d["skipped"])
+
+
+def _make_tool_result(state: str = "completed") -> ToolResult:
+    return ToolResult(
+        tool_name="mock_tool",
+        state=state,  # type: ignore[arg-type]
+        attempts=1,
+        latency_ms=10,
+        output={"row_count": 5},
+    )
+
+
+def _make_verification(
+    success: bool = True,
+    alternative_tool: str | None = None,
+) -> VerificationResult:
+    return VerificationResult(
+        success=success,
+        issues=[] if success else ["criterion failed: output.row_count > 10"],
+        failure_reason=None if success else "data_mismatch",
+        suggested_action="proceed" if success else "retry",
+        alternative_tool=alternative_tool,
+    )
+
+
+class StepResultToDictTests(unittest.TestCase):
+    def test_step_result_to_dict_with_tool_result(self) -> None:
+        """tool_result이 None이 아닐 때 to_dict()에 tool_result 포함."""
+        r = StepResult(
+            step_id="s1",
+            tool_name="mock_tool",
+            tool_result=_make_tool_result(),
+            verification=None,
+            skipped=False,
+            error="",
+        )
+        d = r.to_dict()
+        self.assertIsNotNone(d["tool_result"])
+        self.assertIsInstance(d["tool_result"], dict)
+
+    def test_step_result_to_dict_with_verification(self) -> None:
+        """verification이 None이 아닐 때 to_dict()에 success/issues/failure_reason/suggested_action/alternative_tool 포함."""
+        r = StepResult(
+            step_id="s2",
+            tool_name="mock_tool",
+            tool_result=None,
+            verification=_make_verification(success=False),
+            skipped=False,
+            error="",
+        )
+        d = r.to_dict()
+        self.assertIsNotNone(d["verification"])
+        v = d["verification"]
+        self.assertIn("success", v)
+        self.assertIn("issues", v)
+        self.assertIn("failure_reason", v)
+        self.assertIn("suggested_action", v)
+        self.assertIn("alternative_tool", v)
+
+    def test_step_result_to_dict_verification_all_fields(self) -> None:
+        """VerificationResult의 모든 필드가 직렬화됨."""
+        vr = _make_verification(success=False)
+        r = StepResult(
+            step_id="s3",
+            tool_name="mock_tool",
+            tool_result=None,
+            verification=vr,
+            skipped=False,
+            error="",
+        )
+        d = r.to_dict()
+        v = d["verification"]
+        self.assertFalse(v["success"])
+        self.assertEqual(v["issues"], ["criterion failed: output.row_count > 10"])
+        self.assertEqual(v["failure_reason"], "data_mismatch")
+        self.assertEqual(v["suggested_action"], "retry")
+        self.assertIsNone(v["alternative_tool"])
+
+    def test_step_result_to_dict_with_alternative_tool(self) -> None:
+        """alternative_tool이 None이 아닐 때 직렬화됨."""
+        vr = _make_verification(success=False, alternative_tool="fallback_tool")
+        r = StepResult(
+            step_id="s4",
+            tool_name="mock_tool",
+            tool_result=None,
+            verification=vr,
+            skipped=False,
+            error="",
+        )
+        d = r.to_dict()
+        self.assertEqual(d["verification"]["alternative_tool"], "fallback_tool")
 
 
 if __name__ == "__main__":

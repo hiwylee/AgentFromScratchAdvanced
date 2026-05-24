@@ -159,5 +159,106 @@ class TestVerificationResultDataclass(unittest.TestCase):
         self.assertIsNone(vr.alternative_tool)
 
 
+def _completed(output: dict) -> ToolResult:
+    return ToolResult(
+        tool_name="test_tool",
+        state="completed",
+        attempts=1,
+        latency_ms=0,
+        output=output,
+    )
+
+
+class TestComparisonOperators(unittest.TestCase):
+    def setUp(self) -> None:
+        self.verifier = ToolResultVerifier()
+
+    # --- >= ---
+
+    def test_gte_passes_when_equal(self) -> None:
+        """output.count >= 5, count=5 -> True."""
+        vr = self.verifier.verify(_completed({"count": 5}), ["output.count >= 5"])
+        self.assertTrue(vr.success)
+
+    def test_gte_passes_when_greater(self) -> None:
+        """output.count >= 5, count=10 -> True."""
+        vr = self.verifier.verify(_completed({"count": 10}), ["output.count >= 5"])
+        self.assertTrue(vr.success)
+
+    def test_gte_fails_when_less(self) -> None:
+        """output.count >= 5, count=3 -> False."""
+        vr = self.verifier.verify(_completed({"count": 3}), ["output.count >= 5"])
+        self.assertFalse(vr.success)
+        self.assertTrue(any("output.count >= 5" in issue for issue in vr.issues))
+
+    # --- < ---
+
+    def test_lt_passes(self) -> None:
+        """output.count < 10, count=5 -> True."""
+        vr = self.verifier.verify(_completed({"count": 5}), ["output.count < 10"])
+        self.assertTrue(vr.success)
+
+    def test_lt_fails_when_equal(self) -> None:
+        """output.count < 10, count=10 -> False."""
+        vr = self.verifier.verify(_completed({"count": 10}), ["output.count < 10"])
+        self.assertFalse(vr.success)
+
+    # --- <= ---
+
+    def test_lte_passes_when_equal(self) -> None:
+        """output.count <= 5, count=5 -> True."""
+        vr = self.verifier.verify(_completed({"count": 5}), ["output.count <= 5"])
+        self.assertTrue(vr.success)
+
+    def test_lte_fails_when_greater(self) -> None:
+        """output.count <= 5, count=6 -> False."""
+        vr = self.verifier.verify(_completed({"count": 6}), ["output.count <= 5"])
+        self.assertFalse(vr.success)
+
+    # --- == ---
+
+    def test_eq_passes(self) -> None:
+        """output.count == 5, count=5 -> True."""
+        vr = self.verifier.verify(_completed({"count": 5}), ["output.count == 5"])
+        self.assertTrue(vr.success)
+
+    def test_eq_fails(self) -> None:
+        """output.count == 5, count=6 -> False."""
+        vr = self.verifier.verify(_completed({"count": 6}), ["output.count == 5"])
+        self.assertFalse(vr.success)
+
+    # --- non-numeric value ---
+
+    def test_comparison_non_numeric_returns_false(self) -> None:
+        """output.count > 5, count='abc' -> criterion failed."""
+        vr = self.verifier.verify(_completed({"count": "abc"}), ["output.count > 5"])
+        self.assertFalse(vr.success)
+        self.assertTrue(any("output.count > 5" in issue for issue in vr.issues))
+
+    # --- is None / is not None ---
+
+    def test_is_none_passes_when_none(self) -> None:
+        """output.value is None, key absent -> pass."""
+        vr = self.verifier.verify(_completed({}), ["output.value is None"])
+        self.assertTrue(vr.success)
+
+    def test_is_none_fails_when_not_none(self) -> None:
+        """output.value is None, value=42 -> fail."""
+        vr = self.verifier.verify(_completed({"value": 42}), ["output.value is None"])
+        self.assertFalse(vr.success)
+
+    # --- is empty / is not empty ---
+
+    def test_is_empty_passes(self) -> None:
+        """output.items is empty, items=[] -> pass."""
+        vr = self.verifier.verify(_completed({"items": []}), ["output.items is empty"])
+        self.assertTrue(vr.success)
+
+    def test_is_empty_fails(self) -> None:
+        """output.items is empty, items=[1,2] -> fail."""
+        vr = self.verifier.verify(_completed({"items": [1, 2]}), ["output.items is empty"])
+        self.assertFalse(vr.success)
+
+
 if __name__ == "__main__":
     unittest.main()
