@@ -321,6 +321,33 @@ Oracle ADW natural-language data access as the first domain specialization.
   values are rejected, behavior-shaping candidate type checks are stricter, and
   pytest can run from the repository root through `pyproject.toml`.
 
+## General Agent Architecture (claude/general branch — completed 2026-05-24)
+
+Implemented P1–P7 of the general-purpose agent design on branch `claude/general`.
+352 tests pass; all architect reviews APPROVED with no CRITICAL/HIGH issues.
+
+Key new files:
+- `agent_runtime/planner.py` — PlanStep + ExecutionPlan with Kahn topological sort
+- `agent_runtime/executor.py` — StepExecutor shadow mode (plan artifact without changing execution)
+- `agent_runtime/verifier.py` — ToolResultVerifier, FailureReason taxonomy, regex-only criteria
+- `agent_runtime/session.py` — SessionContext, BudgetTracker, ConversationSlot, file-split persistence
+- `agent_runtime/hooks.py` — HookRegistry (redact enforced, per-handler isolation)
+- `agent_runtime/skills.py` — SkillRegistry infrastructure (no skills registered yet)
+- `artifacts/schemas/plan.schema.v1.json`, `session-context.schema.v1.json`
+
+Key modifications:
+- `types.py`: IntentResult, ConversationSlot, FailureReason, SuggestedAction
+- `intent.py`: KeywordIntentClassifier + from_user_intent(), IntentClassifier protocol
+- `tools.py`: ToolSpec.capabilities/cost_estimate, find_tools_by_capabilities, all_registered()
+- `self_evolution.py`: _intent_signature() 3-way dispatch, load_active_memories()
+- `model.py`: ActionModel.choose_action(context=) — optional memory injection
+- `loop.py`: AgentResult.plan_shadow + memory_summary; AgentLoop(memory_dir, hook_registry)
+
+Remaining before main merge:
+- `claude/general` → `main` PR review
+- Register second tool to activate SkillRegistry composition
+- Wire ToolRunner events through HookRegistry (tool_started / tool_completed)
+
 ## Next Action
 
 Next implementation focus moves past the first Milestone 7 operator recording

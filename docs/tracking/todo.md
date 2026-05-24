@@ -234,4 +234,42 @@ Acceptance criteria:
   behavior changes.
 - `[x]` Record durable decisions in `docs/tracking/decisions.md`.
 - `[x]` Update `docs/tracking/change-log.md` after meaningful changes.
-- `[ ]` Keep `docs/tracking/current-state.md` accurate before ending sessions.
+- `[x]` Keep `docs/tracking/current-state.md` accurate before ending sessions.
+
+## General Agent (claude/general branch — P1–P7)
+
+- `[x]` P1: `IntentResult` + `IntentClassifier` protocol; `KeywordIntentClassifier`
+  wraps `analyze_user_intent()` for backward compat; capability tags
+  `domain.resource.verb`.
+- `[x]` P1.5: `_intent_signature()` 3-way dispatch (IntentResult / dict /
+  UserIntent); `ConversationSlot` separates session-scope state from
+  MemoryRecord gate.
+- `[x]` P2: `ToolSpec.capabilities` + `cost_estimate`; `find_tools_by_capabilities`
+  with `_policy_error()` gate; `ToolState` adds `"timed_out"`;
+  `all_registered()` public method.
+- `[x]` P3: `planner.py` — `PlanStep` (success_criteria, retry_policy,
+  risk_level), `ExecutionPlan` with Kahn topological sort;
+  `artifacts/schemas/plan.schema.v1.json`.
+- `[x]` P4a: `executor.py` (StepExecutor shadow mode) + `verifier.py`
+  (ToolResultVerifier, FailureReason taxonomy, regex-only criteria parser,
+  no eval()).
+- `[x]` P4b: `loop.py` shadow block — plan artifact recorded in
+  `AgentResult.plan_shadow` without changing execution; failures logged via
+  `monitor.event`; double classification removed via
+  `from_user_intent()`.
+- `[x]` P5: `session.py` — `SessionContext`, `BudgetTracker`,
+  `ConversationSlot` round-trip; `messages.jsonl` + `state.json` with
+  `redact()` + 0o600 permissions.
+- `[x]` P6: `load_active_memories(memory_dir)` — status=active +
+  review_status=approved double gate; `ActionModel.choose_action(context=)`
+  extension; `AgentLoop(memory_dir=)` loads and injects approved memories;
+  `memory_injected` monitor + audit events; 21 dedicated tests.
+- `[x]` P7: `hooks.py` — `HookRegistry` with `redact()` enforcement and
+  per-handler isolation; `skills.py` — `SkillRegistry` infrastructure
+  (no skills registered yet); `AgentLoop(hook_registry=)` fires
+  `intent_analyzed`, `memory_injected`, `plan_shadow_recorded` events;
+  32 dedicated tests.
+- `[ ]` Merge `claude/general` branch into `main` after review.
+- `[ ]` Register a second tool to activate `SkillRegistry` composition.
+- `[ ]` Add `P7` hook events for tool_started / tool_completed to wire
+  `ToolRunner` events through `HookRegistry`.
