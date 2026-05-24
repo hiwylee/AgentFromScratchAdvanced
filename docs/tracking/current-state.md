@@ -360,27 +360,26 @@ Closed gaps identified by 12-principle Agentic Engineering review:
 
 ## Next Action
 
-Next implementation focus moves past the first Milestone 7 operator recording
-and hardening boundary:
+P10 is complete. Next focus is **P11** on branch `claude/general`:
 
-- optionally run a live LLM smoke after setting `OPENAI_API_KEY`:
+- **Human Gate real interrupt**: webhook or CLI prompt that pauses execution
+  when a `PlanStep` has `requires_approval=True`, waits for operator decision,
+  and resumes or aborts.
+- **Context compression/retrieval**: summarize old conversation turns into
+  `MemoryRecord` to prevent context explosion; wire `recent_history()` into
+  `AgentLoop` for multi-turn sessions.
+- **LLM-based semantic self-evaluation**: upgrade `SelfEvaluator` beyond 5
+  structural checks to LLM-critique when a model provider is configured.
 
-```bash
-bin/agent ask "hello" --model-provider openai --run-dir /tmp/afs-llm-smoke --audit-log /tmp/afs-llm-smoke.jsonl
-```
+Secondary (Milestone 7 hardening, not yet started):
 
-- add JSON Schema files for the self-evolution artifacts if external producers
-  will write them directly;
-- define candidate artifact hash/signature and reviewer identity fields before
-  persisted candidates can feed an apply workflow;
-- design candidate review/approval and rollback execution flows before opening
-  any behavior-change apply path;
-- define the next active execution plan before starting another implementation
-  wave;
-- broaden drift fixtures only after a concrete prompt, policy, or memory change
-  candidate needs coverage;
-- keep automatic self-modification closed until reviewer identity, artifact
-  signing or hashes, and rollback execution are designed.
+- Add JSON Schema files for self-evolution artifacts if external tools will
+  produce candidates, memory records, rollback plans, or drift fixtures.
+- Add candidate hash/signature fields before any persisted candidate can feed
+  an apply workflow.
+- Design candidate review/approval CLI states with reviewer identity,
+  timestamps, reject/change-request states, and audit records.
+- Keep automatic self-modification, prompt rewrites, and policy rewrites closed.
 
 Persistent workflow approval/resume and real target-system writes must remain
 closed until signed or hashed checkpoint persistence, approval authorization,
@@ -471,18 +470,19 @@ bin/agent status --run-dir /tmp/afs-runs-2
 bin/agent status --run-dir /tmp/afs-workflow-intent2
 ```
 
-The latest full test run covered 183 tests and passed. Focused model, CLI,
-intent, runtime-control, query-plan, tool, eval-runner, and result-explanation
-tests pass. The reviewed negative channel prompt no longer emits proposed SQL,
-fake result rows, or real execution markers. Focused runtime, SQL execution,
-SQLcl runner, tool, and Oracle ADW tests pass. The mock `agent ask` smoke
-works, and the OpenAI provider path fails closed with `configuration_required`
-when `OPENAI_API_KEY` is not set. OCI provider live smoke now succeeds through
-the API-key fallback route after the documented `/openai/v1` route returns
-OCI 404.
-Query-plan artifacts still propose SQL only after read-only policy validation
-and mark execution as `not_executed`. Fake result explanations are marked as
-deterministic non-real output and use only `FakeSqlExecutionAdapter`.
+Latest full test run (2026-05-24, after P10 merge): **450 tests / 109 subtests passed**.
+
+```bash
+uv run --python 3.13 python -m pytest -q
+# → 450 passed, 109 subtests passed
+```
+
+Previous baseline (post-Milestone-7 hardening): 207 tests / 103 subtests.
+General agent P1–P10 added 243 net tests across planner, executor, verifier,
+session, hooks, skills, self-evaluator, session-summarizer, loop-eval,
+session-windowing, capability matching, keyword intent classifier, loop hooks,
+memory injection, mock data query, tool runner hooks, and intent signature
+modules.
 
 ## Open Questions
 
@@ -512,17 +512,17 @@ deterministic non-real output and use only `FakeSqlExecutionAdapter`.
 - Read this file.
 - Read `docs/tracking/todo.md`.
 - Read `docs/tracking/next-work-queue.md`.
-- For Milestone 5 work, open `docs/design-docs/database-natural-language.md`
-  and `docs/tracking/todo.md` first.
 - For Oracle ADW execution work, open `agent_runtime/oracle_adw.py` and
   `tests/test_oracle_adw.py` first.
 - For OCI Responses API LLM work, open `docs/runbooks/oci-responses-api.md`,
   `agent_runtime/model.py`, and `tests/test_model.py` first.
+- For general agent / P11 work, open `agent_runtime/loop.py`,
+  `agent_runtime/executor.py`, `agent_runtime/session.py`, and
+  `agent_runtime/self_evaluator.py` first.
 - Check local git state with:
 
 ```bash
-git --git-dir=/tmp/AgentFromScratch.git --work-tree="$PWD" status
+git fetch --prune origin
+git status --short --branch
+git log --oneline @{u}..HEAD
 ```
-
-The workspace currently uses `/tmp/AgentFromScratch.git` as the git metadata
-directory because `.git` in the worktree is a read-only mount.

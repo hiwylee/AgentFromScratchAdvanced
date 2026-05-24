@@ -409,3 +409,79 @@ direction and implementation changes, not every tiny edit.
 - Completed final security/code, QA, and PM reviews for this hardening pass.
   The reviews found no blocking code issues; PM verdict was conditional ship
   after updating tracking and handoff documentation.
+
+## 2026-05-24
+
+- Implemented the general-purpose agent design (P1–P10) on branch
+  `claude/general`. All work merged into `main` via PR #1.
+
+### P1–P7 — General Agent Foundation
+
+- Added `agent_runtime.planner`: `PlanStep` and `ExecutionPlan` with Kahn
+  topological sort. Plan steps carry `required_capabilities`, `depends_on`,
+  `success_criteria`, `retry_policy`, `risk_level`, `requires_approval`, and
+  `fallback_strategy`.
+- Added `agent_runtime.executor`: `StepExecutor` with `run_plan_shadow()` for
+  plan artifact capture without execution side effects.
+- Added `agent_runtime.verifier`: `ToolResultVerifier` and `FailureReason`
+  taxonomy (`missing_context`, `ambiguous_request`, `tool_error`,
+  `policy_denied`, `data_mismatch`, `timeout`, `external_unavailable`,
+  `budget_exceeded`, `unsafe_side_effect`, `schema_or_contract_mismatch`).
+- Added `agent_runtime.session`: `SessionContext`, `BudgetTracker`, and
+  `ConversationSlot`. Session state persists to `{run_dir}/{session_id}/`
+  as `messages.jsonl` + `state.json` (permissions `0o600`).
+- Added `agent_runtime.hooks`: `HookRegistry` with per-handler redact()
+  enforcement and per-handler exception isolation.
+- Added `agent_runtime.skills`: `SkillRegistry` and `default_skill_registry()`
+  composition.
+- Extended `ToolSpec` with `capabilities` list and `cost_estimate`; registered
+  `mock_data_query` as a second wired tool. `ToolRunner` events now fire
+  `tool_started` / `tool_completed` through `HookRegistry`.
+- Added `artifacts/schemas/plan.schema.v1.json` and
+  `artifacts/schemas/session-context.schema.v1.json`.
+
+### P8 — Real Plan Execution
+
+- Extended `StepExecutor` with `run_plan()`: real tool calls in topological
+  groups with `approval_callback` gate for `requires_approval=True` steps.
+  Fallback strategies `retry`, `skip`, `abort`, `clarify`, and
+  `use_alternative` are wired to `FailureReason` outcomes.
+- Added `AgentLoop(use_plan_execution=False)` flag and
+  `AgentResult.plan_execution` field. Shadow mode records `plan_shadow` in
+  trace without changing execution flow.
+
+### P9 — Reflection Loop
+
+- Added `agent_runtime.self_evaluator`: `SelfEvaluator` runs five deterministic
+  answer-quality checks (non-empty, no error prefix, no refusal-only, lexical
+  overlap informational, length ≥ 20 chars) and returns `EvalResult` with
+  `passed`, `score`, `issues`, and `suggestions`.
+- Added `agent_runtime.session_summarizer`: `SessionSummarizer` scans run
+  results for failed verifications, groups by `failure_reason`, and writes one
+  `MemoryRecord` per distinct reason. Records always use `status="proposed"` and
+  `review_status="pending"` — never auto-applied.
+
+### P10 — Agentic Engineering Wiring
+
+- Wired `SelfEvaluator` into `AgentLoop.run()` after `_final_answer()`. Result
+  stored in `AgentResult.eval_result`; `answer_evaluated` hook fires with
+  `passed`, `score`, and `issues`.
+- Added `AgentLoop.summarize_session()` so the CLI can call `SessionSummarizer`
+  after a run and report proposed memory paths.
+- Added `SessionContext.recent_history(n=20)` for LLM context windowing; avoids
+  context explosion in multi-turn sessions.
+- Added `--memory-dir` CLI flag to `agent ask`; loads approved memories into
+  `AgentLoop` and writes proposed memories from `summarize_session()`.
+- Codex adversarial review + independent security, code, and QA reviews passed.
+  Full test suite: 450 tests / 109 subtests passed.
+- PR #1 (`claude/general` → `main`) opened and merged.
+
+### Agentic Engineering 12-principle coverage after P10
+
+- Covered: Goal-driven, Planning, Tool Use, Infinite Loop Prevention,
+  Tool Reliability, Observability.
+- Partially covered: Memory (windowing added; compression is P11+), Reflection
+  (structural checks only; LLM critique is P11+).
+- Partially covered: Human Gate (approval_callback exists; real interrupt is
+  P11), Evaluation (offline golden evals only).
+- Not yet covered: Context compression/retrieval (P11+).

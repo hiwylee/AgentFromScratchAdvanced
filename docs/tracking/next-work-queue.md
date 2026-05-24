@@ -400,9 +400,73 @@ Expert and PM review status: latest security/code and QA reviews found no
 blocking issues after this hardening pass. PM verdict was conditional ship after
 updating tracking docs and next-work guidance.
 
-## Next Implementation Wave
+## Completed General Agent Wave (P1–P10, 2026-05-24)
 
-Choose the next Milestone 7 hardening slice:
+Implemented the general-purpose agent design on branch `claude/general`
+(merged to `main` via PR #1). 450 tests / 109 subtests pass.
+
+Modules added: `planner.py`, `executor.py`, `verifier.py`, `session.py`,
+`hooks.py`, `skills.py`, `self_evaluator.py`, `session_summarizer.py`.
+New artifacts: `artifacts/schemas/plan.schema.v1.json`,
+`artifacts/schemas/session-context.schema.v1.json`.
+
+See `docs/tracking/change-log.md` § 2026-05-24 for full detail.
+
+## Next Implementation Wave — P11 (General Agent)
+
+Three open P11 items on branch `claude/general`:
+
+### P11-A: Human Gate Real Interrupt
+
+Scope: `agent_runtime/executor.py`, `agent_runtime/cli.py`
+
+- Replace the `approval_callback: Callable[[PlanStep], bool] | None` stub with
+  a real interrupt path: pause execution at `requires_approval=True` steps,
+  emit a CLI prompt or webhook event, and resume or abort based on operator
+  response.
+- Audit records must capture approval decision, timestamp, and operator id.
+- Keep the existing `approval_callback` protocol so tests remain compatible.
+
+Acceptance:
+- `run_plan()` blocks and waits for operator input when `requires_approval=True`.
+- Approval and rejection are both audited.
+- Timeout results in abort, not silent skip.
+
+### P11-B: Context Compression / Retrieval
+
+Scope: `agent_runtime/session.py`, `agent_runtime/loop.py`,
+`agent_runtime/session_summarizer.py`
+
+- Wire `SessionContext.recent_history(n=20)` into `AgentLoop` so only the last
+  20 messages are injected into model context on each turn.
+- Add a compression step that summarizes turns beyond the window into a
+  `MemoryRecord(status="proposed", review_status="pending")`.
+- Keep full history in `messages.jsonl`; inject only the compressed window.
+
+Acceptance:
+- Multi-turn sessions do not inject unbounded history into model context.
+- Compressed summaries are proposed, never auto-applied.
+- Existing single-turn tests continue to pass.
+
+### P11-C: LLM-Based Semantic Self-Evaluation
+
+Scope: `agent_runtime/self_evaluator.py`
+
+- Add an optional LLM-critique path to `SelfEvaluator` when a model provider
+  is configured (`model_provider != "mock"`).
+- Structural checks (P9) remain as the fast fallback when no provider is set.
+- LLM critique output is recorded in `AgentResult.eval_result` alongside the
+  structural score.
+- Never block answer delivery on LLM critique failure; log and proceed.
+
+Acceptance:
+- Mock mode still uses structural-only checks.
+- LLM critique result is audited.
+- `test_loop_eval.py` continues to pass in mock mode.
+
+## Milestone 7 Hardening — Secondary Wave
+
+Not yet started. Choose when P11 is complete:
 
 1. Add JSON Schema files for self-evolution artifacts if external tools will
    produce candidates, memory records, rollback plans, or drift fixtures.
