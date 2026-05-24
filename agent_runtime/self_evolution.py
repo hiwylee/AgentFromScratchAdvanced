@@ -8,6 +8,7 @@ all be present before a behavior-shaping candidate can be accepted.
 
 from __future__ import annotations
 
+import dataclasses
 import json
 import math
 from collections.abc import Iterable, Mapping
@@ -165,6 +166,39 @@ class CandidateReview:
         return redact(asdict(self))
 
 
+def compute_candidate_content_hash(
+    candidate_id: str,
+    candidate_type: str,
+    summary: str,
+    proposed_change: str,
+    affected_artifacts: "Iterable[ArtifactChange]",
+    trigger_type: str,
+) -> str:
+    """Return SHA-256 hex digest of the candidate's stable content fields.
+
+    Excludes mutable fields: status, review, created_at, content_hash.
+    The canonical form is compact JSON with sorted keys.
+    """
+    canonical = {
+        "candidate_id": candidate_id,
+        "candidate_type": candidate_type,
+        "summary": summary,
+        "proposed_change": proposed_change,
+        "affected_artifacts": [
+            {
+                "artifact_path": a.path,  # intentional: 'artifact_path' not 'path' — do not change without re-hashing all candidates
+                "artifact_type": a.artifact_type,
+                "current_version": a.current_version,
+                "proposed_version": a.proposed_version,
+            }
+            for a in affected_artifacts
+        ],
+        "trigger_type": trigger_type,
+    }
+    payload = json.dumps(canonical, sort_keys=True, separators=(",", ":"))
+    return sha256(payload.encode()).hexdigest()
+
+
 @dataclass(frozen=True)
 class ImprovementCandidateRecord:
     schema_version: str
@@ -179,6 +213,7 @@ class ImprovementCandidateRecord:
     risk_level: str = "medium"
     created_at: str = field(default_factory=utc_now)
     review: CandidateReview = field(default_factory=CandidateReview)
+    content_hash: str = ""
 
     @classmethod
     def from_dict(cls, data: Mapping[str, Any]) -> "ImprovementCandidateRecord":
@@ -212,10 +247,29 @@ class ImprovementCandidateRecord:
             risk_level=str(data.get("risk_level") or "medium"),
             created_at=str(data.get("created_at") or utc_now()),
             review=CandidateReview.from_dict(data.get("review") if isinstance(data.get("review"), Mapping) else None),
+            content_hash=str(data.get("content_hash") or ""),
         )
 
     def to_dict(self) -> dict[str, Any]:
         return redact(asdict(self))
+
+
+def verify_candidate_hash(record: "ImprovementCandidateRecord") -> bool:
+    """Return True when the record's content_hash matches recomputed hash.
+
+    Returns False if content_hash is empty (no hash recorded).
+    """
+    if not record.content_hash:
+        return False
+    expected = compute_candidate_content_hash(
+        candidate_id=record.candidate_id,
+        candidate_type=record.candidate_type,
+        summary=record.summary,
+        proposed_change=record.proposed_change,
+        affected_artifacts=record.affected_artifacts,
+        trigger_type=record.trigger_type,
+    )
+    return record.content_hash == expected
 
 
 @dataclass(frozen=True)
@@ -335,28 +389,32 @@ def load_improvement_candidate(path: Path) -> ImprovementCandidateRecord:
 
 def build_improvement_candidate(
     *,
-    candidate_id: str,
+    candidate_id: str | None = None,
     candidate_type: CandidateType,
     trigger_type: str,
     summary: str,
     proposed_change: str,
     affected_artifacts: Iterable[ArtifactChange],
-    source_type: str,
+    source_type: str = "unknown",
     source_id: str,
     author: str,
     confidence: float = 0.5,
     evidence: Iterable[str] = (),
     risk_level: str = "medium",
 ) -> ImprovementCandidateRecord:
+    import uuid
+
+    resolved_id = candidate_id if candidate_id is not None else str(uuid.uuid4())
+    artifacts_list = list(affected_artifacts)
     payload = {
         "schema_version": IMPROVEMENT_CANDIDATE_SCHEMA_VERSION,
-        "candidate_id": candidate_id,
+        "candidate_id": resolved_id,
         "candidate_type": candidate_type,
         "status": "proposed",
         "trigger_type": trigger_type,
         "summary": summary,
         "proposed_change": proposed_change,
-        "affected_artifacts": [artifact.to_dict() for artifact in affected_artifacts],
+        "affected_artifacts": [artifact.to_dict() for artifact in artifacts_list],
         "provenance": {
             "source_type": source_type,
             "source_id": source_id,
@@ -376,7 +434,16 @@ def build_improvement_candidate(
             "notes": "",
         },
     }
-    return ImprovementCandidateRecord.from_dict(payload)
+    record = ImprovementCandidateRecord.from_dict(payload)
+    content_hash = compute_candidate_content_hash(
+        candidate_id=record.candidate_id,
+        candidate_type=record.candidate_type,
+        summary=record.summary,
+        proposed_change=record.proposed_change,
+        affected_artifacts=record.affected_artifacts,
+        trigger_type=record.trigger_type,
+    )
+    return dataclasses.replace(record, content_hash=content_hash)
 
 
 def write_improvement_candidate(
@@ -599,8 +666,7 @@ def _run_drift_case(
             trace_data = trace.to_dict()
             assert_no_known_secret_values(trace_data, context=f"drift trace {case.case_id}")
         except SecretLeakError:
-            mismatches.append("trace contains an unredacted known secret value")
-            trace_data = trace.to_dict()
+            raise  # SecretLeakError must never be silenced
         signatures.append(_trace_signature(trace_data))
 
     first = signatures[0]
@@ -968,6 +1034,7 @@ __all__ = [
     "RollbackPlan",
     "SelfEvolutionGateReport",
     "build_improvement_candidate",
+    "compute_candidate_content_hash",
     "evaluate_self_evolution_gate",
     "load_drift_cases",
     "load_improvement_candidate",
@@ -975,5 +1042,6 @@ __all__ = [
     "load_memory_record",
     "load_rollback_plan",
     "run_drift_checks",
+    "verify_candidate_hash",
     "write_improvement_candidate",
 ]

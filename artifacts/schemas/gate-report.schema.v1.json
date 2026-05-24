@@ -1,0 +1,55 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "SelfEvolutionGateReport",
+  "description": "Schema for agent-runtime self-evolution gate reports (schema_version = agent-runtime.self-evolution-gate.v1).",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "candidate_id",
+    "status",
+    "reasons",
+    "eval_passed",
+    "drift_passed",
+    "review_decision",
+    "rollback_covered_paths"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "const": "agent-runtime.self-evolution-gate.v1"
+    },
+    "candidate_id": {
+      "type": "string",
+      "description": "The candidate that was evaluated."
+    },
+    "status": {
+      "type": "string",
+      "enum": ["passed", "blocked"]
+    },
+    "reasons": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "List of block reasons; empty when status is passed."
+    },
+    "eval_passed": {
+      "type": "boolean"
+    },
+    "drift_passed": {
+      "type": "boolean"
+    },
+    "review_decision": {
+      "type": "string",
+      "enum": ["pending", "approved", "changes_requested", "rejected"]
+    },
+    "rollback_covered_paths": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "Artifact paths covered by the rollback plan."
+    }
+  }
+}

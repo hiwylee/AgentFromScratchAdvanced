@@ -1,0 +1,157 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "ImprovementCandidateRecord",
+  "description": "Schema for agent-runtime improvement candidate records (schema_version = agent-runtime.improvement-candidate.v1).",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "candidate_id",
+    "candidate_type",
+    "status",
+    "trigger_type",
+    "summary",
+    "proposed_change",
+    "affected_artifacts",
+    "provenance"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "const": "agent-runtime.improvement-candidate.v1"
+    },
+    "candidate_id": {
+      "type": "string",
+      "description": "Unique identifier for this candidate."
+    },
+    "candidate_type": {
+      "type": "string",
+      "enum": ["prompt", "policy", "memory", "eval", "schema_context", "docs"]
+    },
+    "status": {
+      "type": "string",
+      "enum": ["proposed", "accepted", "rejected", "superseded"]
+    },
+    "trigger_type": {
+      "type": "string",
+      "description": "What triggered this candidate."
+    },
+    "summary": {
+      "type": "string",
+      "description": "Human-readable summary of the candidate."
+    },
+    "proposed_change": {
+      "type": "string",
+      "description": "Description of the proposed change."
+    },
+    "affected_artifacts": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "$ref": "#/$defs/ArtifactChange"
+      }
+    },
+    "provenance": {
+      "$ref": "#/$defs/MemoryProvenance"
+    },
+    "risk_level": {
+      "type": "string",
+      "enum": ["low", "medium", "high"],
+      "default": "medium"
+    },
+    "created_at": {
+      "type": "string",
+      "description": "ISO 8601 datetime when the candidate was created."
+    },
+    "review": {
+      "$ref": "#/$defs/CandidateReview"
+    },
+    "content_hash": {
+      "type": "string",
+      "description": "SHA-256 hex digest of canonical candidate content."
+    }
+  },
+  "$defs": {
+    "ArtifactChange": {
+      "type": "object",
+      "required": ["path", "artifact_type", "current_version", "proposed_version"],
+      "additionalProperties": false,
+      "properties": {
+        "path": {
+          "type": "string"
+        },
+        "artifact_type": {
+          "type": "string",
+          "enum": ["prompt", "policy", "memory", "eval", "schema_context", "docs"]
+        },
+        "current_version": {
+          "type": "string"
+        },
+        "proposed_version": {
+          "type": "string"
+        }
+      }
+    },
+    "MemoryProvenance": {
+      "type": "object",
+      "required": ["source_type", "source_id", "author", "recorded_at", "confidence", "scope", "review_status"],
+      "additionalProperties": false,
+      "properties": {
+        "source_type": {
+          "type": "string"
+        },
+        "source_id": {
+          "type": "string"
+        },
+        "author": {
+          "type": "string"
+        },
+        "recorded_at": {
+          "type": "string",
+          "description": "ISO 8601 datetime."
+        },
+        "confidence": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "evidence": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "scope": {
+          "type": "string"
+        },
+        "expires_at": {
+          "type": ["string", "null"]
+        },
+        "review_status": {
+          "type": "string",
+          "enum": ["pending", "approved", "changes_requested", "rejected"]
+        }
+      }
+    },
+    "CandidateReview": {
+      "type": "object",
+      "required": ["decision", "notes"],
+      "additionalProperties": false,
+      "properties": {
+        "decision": {
+          "type": "string",
+          "enum": ["pending", "approved", "changes_requested", "rejected"]
+        },
+        "reviewer": {
+          "type": ["string", "null"]
+        },
+        "reviewed_at": {
+          "type": ["string", "null"]
+        },
+        "notes": {
+          "type": "string"
+        }
+      }
+    }
+  }
+}

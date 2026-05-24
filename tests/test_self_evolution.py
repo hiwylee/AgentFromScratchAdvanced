@@ -485,5 +485,75 @@ def _full_drift_result(*, passed: bool):
     )
 
 
+class ContentHashTests(unittest.TestCase):
+
+    def _make_candidate(self) -> ImprovementCandidateRecord:
+        # Use build_improvement_candidate() so hash is auto-computed
+        from agent_runtime.self_evolution import (
+            build_improvement_candidate, ArtifactChange, MemoryProvenance,
+            IMPROVEMENT_CANDIDATE_SCHEMA_VERSION,
+        )
+        return build_improvement_candidate(
+            candidate_id="test-candidate-hash-001",
+            candidate_type="prompt",
+            trigger_type="eval_failure",
+            summary="Test improvement",
+            proposed_change="Update prompt wording",
+            affected_artifacts=[
+                ArtifactChange(
+                    path="artifacts/prompts/intent-classifier.md",
+                    artifact_type="prompt",
+                    current_version="v1",
+                    proposed_version="v2",
+                )
+            ],
+            author="test",
+            source_id="test-src",
+            risk_level="low",
+        )
+
+    def test_hash_is_set_after_build(self):
+        record = self._make_candidate()
+        self.assertTrue(record.content_hash, "content_hash should not be empty after build")
+        self.assertEqual(len(record.content_hash), 64, "SHA-256 hex is 64 chars")
+
+    def test_verify_hash_passes_for_fresh_record(self):
+        from agent_runtime.self_evolution import verify_candidate_hash
+        record = self._make_candidate()
+        self.assertTrue(verify_candidate_hash(record))
+
+    def test_verify_hash_fails_for_empty_hash(self):
+        from agent_runtime.self_evolution import verify_candidate_hash
+        import dataclasses
+        record = self._make_candidate()
+        tampered = dataclasses.replace(record, content_hash="")
+        self.assertFalse(verify_candidate_hash(tampered))
+
+    def test_verify_hash_fails_for_tampered_summary(self):
+        from agent_runtime.self_evolution import verify_candidate_hash
+        import dataclasses
+        record = self._make_candidate()
+        tampered = dataclasses.replace(record, summary="Tampered summary — should fail")
+        # Recompute with original hash but changed summary
+        self.assertFalse(verify_candidate_hash(tampered))
+
+    def test_hash_is_stable_across_calls(self):
+        r1 = self._make_candidate()
+        r2 = self._make_candidate()
+        # Same inputs → same hash (deterministic)
+        self.assertEqual(r1.content_hash, r2.content_hash)
+
+    def test_roundtrip_preserves_hash(self):
+        import json, tempfile
+        from pathlib import Path
+        from agent_runtime.self_evolution import load_improvement_candidate, write_improvement_candidate, verify_candidate_hash
+        record = self._make_candidate()
+        with tempfile.TemporaryDirectory() as tmp:
+            path = write_improvement_candidate(record, Path(tmp) / "candidate.json")
+            loaded = load_improvement_candidate(path)
+        self.assertEqual(record.content_hash, loaded.content_hash)
+        self.assertTrue(verify_candidate_hash(loaded))
+
+
 if __name__ == "__main__":
     unittest.main()

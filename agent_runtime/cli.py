@@ -27,11 +27,17 @@ from .oracle_adw import (
     verify_wallet_paths,
 )
 from .redaction import redact
-from .self_evolution import ArtifactChange, build_improvement_candidate, write_improvement_candidate
+from .self_evolution import (
+    ArtifactChange,
+    CandidateReview,
+    build_improvement_candidate,
+    load_improvement_candidate,
+    write_improvement_candidate,
+)
 from .sql_execution import SqlExecutionRequest, SqlclReadOnlyAdapter
 from .sqlcl_runner import SqlclSubprocessRequest, run_sqlcl_subprocess
 from .trace import SecretLeakError
-from .types import Budget
+from .types import Budget, utc_now
 from .workflow import WorkflowEngine
 
 
@@ -196,6 +202,25 @@ def main(argv: Sequence[str] | None = None) -> int:
         help="replace an existing candidate artifact with the same id",
     )
 
+    review_parser = operator_subparsers.add_parser(
+        "review-candidate",
+        help="list, show, approve, or reject improvement candidates",
+    )
+    review_parser.add_argument(
+        "operation",
+        choices=("list", "show", "approve", "reject"),
+        help="operation to perform",
+    )
+    review_parser.add_argument("--audit-log", default=str(DEFAULT_AUDIT_PATH))
+    review_parser.add_argument(
+        "--candidates-dir",
+        default="artifacts/improvement-candidates",
+        help="directory containing candidate JSON artifacts",
+    )
+    review_parser.add_argument("--candidate-id", default=None, help="candidate id to act on")
+    review_parser.add_argument("--reviewer", default=None, help="reviewer name")
+    review_parser.add_argument("--notes", default="", help="reviewer notes (for reject)")
+
     args = parser.parse_args(argv)
 
     if args.command == "ask":
@@ -259,6 +284,9 @@ def main(argv: Sequence[str] | None = None) -> int:
             risk_level=args.risk_level,
             overwrite=args.overwrite,
         )
+
+    if args.command == "operator" and args.operator_command == "review-candidate":
+        return _cmd_review_candidate(args, Path(args.audit_log))
 
     parser.error(f"unknown command: {args.command}")
     return 2
@@ -1733,6 +1761,145 @@ def _redact_admin_sqlcl_output(
         if value and len(value) >= 4:
             redacted = redacted.replace(value, "[REDACTED]")
     return redact(redacted)
+
+
+def _cmd_review_candidate(args: argparse.Namespace, audit_path: Path) -> int:
+    candidates_dir = Path(args.candidates_dir)
+    operation = args.operation
+
+    if operation == "list":
+        candidate_files = sorted(candidates_dir.glob("*.json")) if candidates_dir.is_dir() else []
+        if not candidate_files:
+            print("(no candidates found)")
+            _append_operator_audit(audit_path, "operator.review_candidate_list", {"candidates_dir": str(candidates_dir), "count": 0})
+            return 0
+        rows = []
+        for path in candidate_files:
+            try:
+                record = load_improvement_candidate(path)
+                rows.append({
+                    "id": record.candidate_id,
+                    "type": record.candidate_type,
+                    "status": record.status,
+                    "review_decision": record.review.decision,
+                    "risk": record.risk_level,
+                    "created_at": record.created_at,
+                })
+            except (ValueError, OSError, KeyError):
+                rows.append({"id": path.stem, "type": "?", "status": "?", "review_decision": "?", "risk": "?", "created_at": "?"})
+        header = f"{'ID':<40} {'type':<16} {'status':<12} {'review_decision':<18} {'risk':<8} {'created_at'}"
+        print(header)
+        print("-" * len(header))
+        for row in rows:
+            print(f"{row['id']:<40} {row['type']:<16} {row['status']:<12} {row['review_decision']:<18} {row['risk']:<8} {row['created_at']}")
+        _append_operator_audit(audit_path, "operator.review_candidate_list", redact({"candidates_dir": str(candidates_dir), "count": len(rows)}))
+        return 0
+
+    if operation == "show":
+        if not args.candidate_id:
+            print("error: --candidate-id is required for show", file=sys.stderr)
+            return 1
+        path = _find_candidate_path(candidates_dir, args.candidate_id)
+        if path is None:
+            print(f"error: candidate not found: {args.candidate_id}", file=sys.stderr)
+            return 1
+        try:
+            record = load_improvement_candidate(path)
+        except (ValueError, OSError) as exc:
+            print(f"error: could not load candidate: {exc}", file=sys.stderr)
+            return 1
+        print(json.dumps(redact(record.to_dict()), ensure_ascii=False, indent=2))
+        _append_operator_audit(audit_path, "operator.review_candidate_show", redact({"candidate_id": record.candidate_id}))
+        return 0
+
+    if operation == "approve":
+        if not args.candidate_id:
+            print("error: --candidate-id is required for approve", file=sys.stderr)
+            return 1
+        reviewer = args.reviewer or ""
+        if not reviewer.strip():
+            print("error: --reviewer must not be empty", file=sys.stderr)
+            return 1
+        path = _find_candidate_path(candidates_dir, args.candidate_id)
+        if path is None:
+            print(f"error: candidate not found: {args.candidate_id}", file=sys.stderr)
+            return 1
+        try:
+            record = load_improvement_candidate(path)
+        except (ValueError, OSError) as exc:
+            print(f"error: could not load candidate: {exc}", file=sys.stderr)
+            return 1
+        if record.review.decision != "pending":
+            print(f"error: candidate review decision is '{record.review.decision}', only 'pending' candidates can be approved", file=sys.stderr)
+            return 1
+        new_review = CandidateReview(decision="approved", reviewer=reviewer, reviewed_at=utc_now(), notes=args.notes or "")
+        base = record.to_dict()
+        updated_data = {**base, "review": new_review.to_dict(), "affected_artifacts": list(base["affected_artifacts"])}
+        try:
+            updated = type(record).from_dict(updated_data)
+            write_improvement_candidate(updated, path, overwrite=True)
+        except (ValueError, OSError, SecretLeakError) as exc:
+            print(f"error: could not write updated candidate: {exc}", file=sys.stderr)
+            return 1
+        _append_operator_audit(audit_path, "operator.review_candidate_approved", redact({"candidate_id": record.candidate_id, "reviewer": reviewer, "status": "approved"}))
+        print(json.dumps(redact({"state": "approved", "candidate_id": record.candidate_id, "reviewer": reviewer}), ensure_ascii=False, indent=2))
+        return 0
+
+    if operation == "reject":
+        if not args.candidate_id:
+            print("error: --candidate-id is required for reject", file=sys.stderr)
+            return 1
+        reviewer = args.reviewer or ""
+        if not reviewer.strip():
+            print("error: --reviewer must not be empty", file=sys.stderr)
+            return 1
+        path = _find_candidate_path(candidates_dir, args.candidate_id)
+        if path is None:
+            print(f"error: candidate not found: {args.candidate_id}", file=sys.stderr)
+            return 1
+        try:
+            record = load_improvement_candidate(path)
+        except (ValueError, OSError) as exc:
+            print(f"error: could not load candidate: {exc}", file=sys.stderr)
+            return 1
+        if record.review.decision != "pending":
+            print(f"error: candidate review decision is '{record.review.decision}', only 'pending' candidates can be rejected", file=sys.stderr)
+            return 1
+        new_review = CandidateReview(decision="rejected", reviewer=reviewer, reviewed_at=utc_now(), notes=args.notes or "")
+        base = record.to_dict()
+        updated_data = {**base, "review": new_review.to_dict(), "affected_artifacts": list(base["affected_artifacts"])}
+        try:
+            updated = type(record).from_dict(updated_data)
+            write_improvement_candidate(updated, path, overwrite=True)
+        except (ValueError, OSError, SecretLeakError) as exc:
+            print(f"error: could not write updated candidate: {exc}", file=sys.stderr)
+            return 1
+        _append_operator_audit(audit_path, "operator.review_candidate_rejected", redact({"candidate_id": record.candidate_id, "reviewer": reviewer, "status": "rejected", "notes": args.notes or ""}))
+        print(json.dumps(redact({"state": "rejected", "candidate_id": record.candidate_id, "reviewer": reviewer}), ensure_ascii=False, indent=2))
+        return 0
+
+    print(f"error: unknown operation: {operation}", file=sys.stderr)
+    return 2
+
+
+def _find_candidate_path(candidates_dir: Path, candidate_id: str) -> "Path | None":
+    if not candidates_dir.is_dir():
+        return None
+    if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,127}", candidate_id):
+        return None
+    direct = candidates_dir / f"{candidate_id}.json"
+    if direct.exists():
+        return direct
+    for path in candidates_dir.glob("*.json"):
+        if path.stem == candidate_id:
+            return path
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+            if isinstance(data, dict) and data.get("candidate_id") == candidate_id:
+                return path
+        except (OSError, json.JSONDecodeError):
+            continue
+    return None
 
 
 def _operator_context() -> dict[str, object]:

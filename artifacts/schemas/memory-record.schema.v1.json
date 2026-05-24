@@ -1,0 +1,90 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "MemoryRecord",
+  "description": "Schema for agent-runtime memory records (schema_version = agent-runtime.memory-record.v1).",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "memory_id",
+    "key",
+    "value",
+    "status",
+    "provenance"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "const": "agent-runtime.memory-record.v1"
+    },
+    "memory_id": {
+      "type": "string",
+      "description": "Unique identifier for this memory record."
+    },
+    "key": {
+      "type": "string",
+      "description": "Memory key."
+    },
+    "value": {
+      "type": "string",
+      "description": "Memory value."
+    },
+    "status": {
+      "type": "string",
+      "enum": ["proposed", "active", "expired", "rejected"]
+    },
+    "provenance": {
+      "$ref": "#/$defs/MemoryProvenance"
+    },
+    "tags": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "Optional tags associated with this memory record."
+    }
+  },
+  "$defs": {
+    "MemoryProvenance": {
+      "type": "object",
+      "required": ["source_type", "source_id", "author", "recorded_at", "confidence", "scope", "review_status"],
+      "additionalProperties": false,
+      "properties": {
+        "source_type": {
+          "type": "string"
+        },
+        "source_id": {
+          "type": "string"
+        },
+        "author": {
+          "type": "string"
+        },
+        "recorded_at": {
+          "type": "string",
+          "description": "ISO 8601 datetime."
+        },
+        "confidence": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "evidence": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "scope": {
+          "type": "string"
+        },
+        "expires_at": {
+          "type": ["string", "null"]
+        },
+        "review_status": {
+          "type": "string",
+          "enum": ["pending", "approved", "changes_requested", "rejected"]
+        }
+      }
+    }
+  }
+}
