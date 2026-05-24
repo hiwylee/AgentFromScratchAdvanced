@@ -101,10 +101,19 @@ def main(argv: Sequence[str] | None = None) -> int:
     status_parser = subparsers.add_parser("status", help="show latest run status")
     status_parser.add_argument("--run-dir", default=str(DEFAULT_RUN_DIR))
 
-    workflow_parser = subparsers.add_parser("workflow", help="run a mock workflow")
-    workflow_parser.add_argument("text", nargs="+", help="workflow request text")
+    workflow_parser = subparsers.add_parser("workflow", help="run or resume a mock workflow")
+    workflow_parser.add_argument("text", nargs="*", help="workflow request text (omit when using 'resume' subcommand)")
     workflow_parser.add_argument("--run-dir", default=str(DEFAULT_RUN_DIR))
     workflow_parser.add_argument("--audit-log", default=str(DEFAULT_AUDIT_PATH))
+    workflow_parser.add_argument("--run-id", default=None, help="run-id of a paused workflow (for resume)")
+    workflow_parser.add_argument(
+        "--decision",
+        default=None,
+        choices=("approve_load", "reject_workflow", "request_manual_correction"),
+        help="human decision for resume",
+    )
+    workflow_parser.add_argument("--actor", default=None, help="reviewer name for resume")
+    workflow_parser.add_argument("--reason", default="", help="reason/notes for resume")
 
     operator_parser = subparsers.add_parser("operator", help="operator-only commands")
     operator_subparsers = operator_parser.add_subparsers(
@@ -238,6 +247,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     if args.command == "status":
         return _status(Path(args.run_dir))
     if args.command == "workflow":
+        if args.text and args.text[0] == "resume":
+            return _cmd_workflow_resume(args, Path(args.run_dir), Path(args.audit_log))
         return _workflow(args.text, Path(args.run_dir), Path(args.audit_log))
     if args.command == "operator" and args.operator_command == "adw-smoke":
         return _operator_adw_smoke(
@@ -445,6 +456,78 @@ def _workflow(text_parts: Sequence[str], run_dir: Path, audit_path: Path) -> int
 
 def _is_supported_workflow_request(text: str) -> bool:
     return "특허" in text and "대체" in text and "등록" in text
+
+
+def _cmd_workflow_resume(
+    args: argparse.Namespace,
+    run_dir: Path,
+    audit_path: Path,
+) -> int:
+    from .workflow import HumanDecision, WorkflowEngine
+
+    run_id = args.run_id
+    decision_action = args.decision
+    actor = args.actor or ""
+    reason = args.reason or ""
+
+    if not run_id:
+        print("error: --run-id is required for workflow resume", file=sys.stderr)
+        return 1
+    if not decision_action:
+        print("error: --decision is required for workflow resume", file=sys.stderr)
+        return 1
+    if not actor.strip():
+        print("error: --actor must not be empty", file=sys.stderr)
+        return 1
+
+    engine = WorkflowEngine(run_root=run_dir, audit_path=audit_path)
+    checkpoint = engine.load_checkpoint_from_disk(run_id)
+    if checkpoint is None:
+        print(
+            json.dumps(redact({
+                "state": "blocked",
+                "reason": "trusted_checkpoint_not_found",
+                "run_id": run_id,
+                "run_dir": str(run_dir),
+            }), ensure_ascii=False, indent=2),
+        )
+        return 2
+
+    engine._checkpoint_store[run_id] = checkpoint  # pre-load for resume
+
+    trusted_checkpoint = checkpoint.get("checkpoint", {})
+    if decision_action == "approve_load":
+        checkpoint_identity = trusted_checkpoint.get("identity", "")
+        checkpoint_hash = trusted_checkpoint.get("hash", "")
+        approved_record_ids = tuple(trusted_checkpoint.get("record_ids", []))
+    else:
+        checkpoint_identity = ""
+        checkpoint_hash = ""
+        approved_record_ids = ()
+
+    decision = HumanDecision(
+        actor=actor,
+        action=decision_action,
+        policy_basis=reason or decision_action,
+        approved_record_ids=approved_record_ids,
+        checkpoint_identity=checkpoint_identity,
+        checkpoint_hash=checkpoint_hash,
+    )
+
+    result = engine.resume_with_human_decision(run_id=run_id, decision=decision)
+    print(json.dumps(redact(result), ensure_ascii=False, indent=2))
+    _append_operator_audit(
+        audit_path,
+        "workflow.resume",
+        redact({
+            "run_id": run_id,
+            "decision": decision_action,
+            "actor": actor,
+            "reason": reason,
+            "result_state": result.get("state"),
+        }),
+    )
+    return 0 if result.get("state") in {"completed", "closed"} else 2
 
 
 def _operator_adw_smoke(

@@ -154,6 +154,41 @@ class WorkflowEngine:
         self.audit_path = audit_path
         self._checkpoint_store: dict[str, dict[str, Any]] = {}
 
+    # --- checkpoint persistence helpers ---
+
+    def _checkpoint_path(self, run_id: str) -> Path:
+        return self.run_root / run_id / "checkpoint.json"
+
+    def _persist_checkpoint(self, run_id: str) -> None:
+        data = self._checkpoint_store.get(run_id)
+        if data is None:
+            return
+        path = self._checkpoint_path(run_id)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        payload = json.dumps(data, ensure_ascii=False, default=str, sort_keys=False, indent=2)
+        path.write_text(payload, encoding="utf-8")
+        import os
+        os.chmod(path, 0o600)
+
+    def load_checkpoint_from_disk(self, run_id: str) -> dict[str, Any] | None:
+        path = self._checkpoint_path(run_id)
+        if not path.exists():
+            return None
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+            if isinstance(data, dict):
+                return data
+        except (OSError, json.JSONDecodeError):
+            pass
+        return None
+
+    def _delete_checkpoint_file(self, run_id: str) -> None:
+        path = self._checkpoint_path(run_id)
+        try:
+            path.unlink(missing_ok=True)
+        except OSError:
+            pass
+
     def run_patent_asset_replacement(self, *, period: str = "current_month") -> dict[str, Any]:
         run_id = str(uuid4())
         monitor = RunMonitor(run_id=run_id, root_dir=self.run_root)
@@ -281,6 +316,7 @@ class WorkflowEngine:
                     "review_packet": deepcopy(review_packet),
                     "checkpoint": deepcopy(trusted_checkpoint),
                 }
+                self._persist_checkpoint(run_id)
 
             result = _result(
                 run_id=run_id,
@@ -338,7 +374,9 @@ class WorkflowEngine:
     ) -> dict[str, Any]:
         monitor = _resume_monitor(run_id, self.run_root)
         self._event(monitor, run_id, "workflow_resume_requested", {"decision": decision.to_dict()})
-        checkpoint = self._checkpoint_store.get(run_id)
+        checkpoint = self._checkpoint_store.get(run_id) or self.load_checkpoint_from_disk(run_id)
+        if checkpoint is not None:
+            self._checkpoint_store[run_id] = checkpoint  # restore in-memory from disk
         if checkpoint is None:
             result = {
                 "state": "blocked",
@@ -364,6 +402,7 @@ class WorkflowEngine:
                 "target_load": _blocked_load("human_decision_not_approve_load"),
             }
             self._checkpoint_store.pop(run_id, None)
+            self._delete_checkpoint_file(run_id)
             monitor.finish("closed", {"workflow": result})
             self._audit(run_id, "workflow_completed", {"workflow": result})
             return result
@@ -459,6 +498,7 @@ class WorkflowEngine:
         monitor.finish("completed", {"workflow": result})
         self._audit(run_id, "workflow_completed", {"workflow": result})
         self._checkpoint_store.pop(run_id, None)
+        self._delete_checkpoint_file(run_id)
         return result
 
     def _lookup_sources(
