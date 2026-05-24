@@ -260,3 +260,39 @@ def _find_tool_for_capability(
         if cap in registered.spec.capabilities:
             return registered.spec
     return None
+
+
+def make_cli_approval_callback(
+    timeout_seconds: float = 30.0,
+    output_sink=None,  # for testing: replaces print; None → use print
+) -> "Callable[[PlanStep], bool]":
+    """Return a callback that prompts stdin for human approval.
+
+    Returns True (approve) or False (deny/timeout).
+    Timeout or non-interactive stdin returns False (abort-safe default).
+    """
+    import concurrent.futures
+    import sys
+
+    def _callback(step: PlanStep) -> bool:
+        _print = output_sink if output_sink is not None else print
+        _print(f"\n[APPROVAL REQUIRED] step={step.step_id}")
+        _print(f"  description : {step.description}")
+        _print(f"  risk_level  : {step.risk_level}")
+        _print(f"  capabilities: {step.required_capabilities}")
+        _print(f"Approve? [y/N] (timeout {timeout_seconds}s): ")
+
+        if not sys.stdin.isatty():
+            _print("(non-interactive — denying)")
+            return False
+
+        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
+            future = pool.submit(input)
+            try:
+                response = future.result(timeout=timeout_seconds)
+            except concurrent.futures.TimeoutError:
+                _print("\n(timed out — denying)")
+                return False
+        return response.strip().lower() == "y"
+
+    return _callback

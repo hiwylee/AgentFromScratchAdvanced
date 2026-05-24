@@ -92,14 +92,65 @@ class SessionContext:
         Used for LLM context injection to prevent context explosion.
         If n <= 0, returns all messages (same as conversation_history).
 
-        P11 note: AgentLoop is currently single-turn and does not maintain a
-        SessionContext across calls. This method is a foundation for multi-turn
-        context management — wire into model.choose_action(context=) when
-        AgentLoop gains persistent session support.
+        Wired into AgentLoop via the session_ctx parameter for multi-turn
+        context management.
         """
         if n <= 0:
             return list(self.conversation_history)
         return list(self.conversation_history[-n:])
+
+    def compress_history(
+        self,
+        threshold: int = 40,
+        author: str = "context_compressor",
+    ) -> list[Any]:
+        """Summarize turns older than the recent window into proposed MemoryRecords.
+
+        Returns a list of proposed MemoryRecord objects (status="proposed",
+        review_status="pending"). Returns [] when history is within threshold.
+        Never applies memories automatically.
+        """
+        if len(self.conversation_history) <= threshold:
+            return []
+        window = threshold // 2
+        # Guard: window=0 means threshold<2; nothing useful to compress.
+        if window == 0:
+            return []
+        old_turns = self.conversation_history[:-window]
+        recent_turns = list(self.conversation_history[-window:])
+
+        # Build compressed summary text — redact secrets before storing.
+        from .redaction import redact
+        lines = [f"{m.role}: {redact(str(m.content))[:120]}" for m in old_turns[:20]]
+        summary_text = "Compressed session history:\n" + "\n".join(lines)
+        if len(old_turns) > 20:
+            summary_text += f"\n... ({len(old_turns) - 20} more turns omitted)"
+
+        # Truncate history to recent window.
+        self.conversation_history = recent_turns
+
+        # Import lazily to avoid circular imports.
+        from .self_evolution import MemoryRecord, MemoryProvenance, MEMORY_RECORD_SCHEMA_VERSION
+        import datetime
+        ts = datetime.datetime.now(datetime.timezone.utc).strftime("%Y%m%d%H%M%S")
+        provenance = MemoryProvenance(
+            source_type="session_compressor",
+            source_id=self.session_id,
+            author=author,
+            recorded_at=datetime.datetime.now(datetime.timezone.utc).isoformat(),
+            confidence=1.0,
+            scope="session",
+            review_status="pending",
+        )
+        record = MemoryRecord(
+            schema_version=MEMORY_RECORD_SCHEMA_VERSION,
+            memory_id=f"compression-{self.session_id}-{len(old_turns)}-{ts}",
+            key="compressed_session_history",
+            value=summary_text,
+            status="proposed",
+            provenance=provenance,
+        )
+        return [record]
 
     def set_slot(self, key: str, value: Any, source_step_id: str = "") -> None:
         self.slots[key] = ConversationSlot(

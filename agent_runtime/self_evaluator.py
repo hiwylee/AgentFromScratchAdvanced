@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import asdict, dataclass, field
-from typing import Any
+from typing import Any, Callable
 
 
 # Korean + English error/refusal markers shared across the runtime.
@@ -49,7 +49,11 @@ class EvalResult:
 
 
 class SelfEvaluator:
-    """Evaluates FinalAnswer quality without LLM calls.
+    """Evaluates FinalAnswer quality.
+
+    Structural checks (5 deterministic heuristics) always run.
+    If ``llm_critic`` is provided, an LLM critique is appended after
+    structural checks. Critique failures degrade gracefully.
 
     Checks (all deterministic):
       1. Non-empty: answer content is not blank.
@@ -61,6 +65,16 @@ class SelfEvaluator:
 
     _ERROR_PREFIXES: tuple[str, ...] = _ERROR_PREFIXES
     _REFUSAL_PHRASES: tuple[str, ...] = _REFUSAL_PHRASES
+
+    def __init__(
+        self,
+        llm_critic: "Callable[[str, str], str] | None" = None,
+    ) -> None:
+        self.llm_critic = llm_critic
+
+    @property
+    def has_llm_critic(self) -> bool:
+        return self.llm_critic is not None
 
     def evaluate(self, query: str, answer: dict[str, Any]) -> EvalResult:
         """Return an EvalResult for the given query/answer pair.
@@ -113,6 +127,28 @@ class SelfEvaluator:
         # Check 5: stub-length answer.
         if len(content) < 20:
             issues.append("answer_too_short")
+
+        # Optional LLM critique — runs after all structural checks.
+        if self.llm_critic is not None:
+            try:
+                critique = self.llm_critic(query, content)
+                if isinstance(critique, str) and critique.strip():
+                    crit_lower = critique.lower()
+                    # Match structured "issue:" prefix or "fail"/"문제" — not bare "issue"
+                    # to avoid false positives on "no issues found" responses.
+                    if any(marker in crit_lower for marker in ("issue:", "fail", "문제")):
+                        parts = re.split(r"issue:|ISSUE:", critique, maxsplit=1)
+                        issue_text = (parts[1].strip().split("\n")[0][:60] if len(parts) > 1 else "critique_flagged")
+                        issue_key = "llm_critique:" + re.sub(r"[^a-z0-9_]", "_", issue_text.lower())[:40]
+                        issues.append(issue_key)
+                    suggestions.append(f"LLM critique: {critique[:200]}")
+            except Exception as _exc:
+                # SecretLeakError must never be silenced — project invariant.
+                from .trace import SecretLeakError
+                if isinstance(_exc, SecretLeakError):
+                    raise
+                # All other LLM critique failures degrade gracefully.
+                pass
 
         # Score: 1.0 minus 0.2 per issue, floor 0.0.
         score = max(0.0, 1.0 - 0.2 * len(issues))

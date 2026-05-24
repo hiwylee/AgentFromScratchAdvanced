@@ -5,8 +5,11 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 from time import monotonic
-from typing import Any
+from typing import TYPE_CHECKING, Any
 from uuid import uuid4
+
+if TYPE_CHECKING:
+    from .session import SessionContext
 
 from .audit import RunRecord, append_audit
 from .hooks import HookRegistry
@@ -90,6 +93,7 @@ class AgentLoop:
         memory_dir: Path | None = None,
         hook_registry: HookRegistry | None = None,
         use_plan_execution: bool = False,
+        session_ctx: "SessionContext | None" = None,
     ) -> None:
         self.model = model or MockModel()
         self.budget = budget or Budget()
@@ -101,6 +105,7 @@ class AgentLoop:
         self._memory_dir = memory_dir
         self._hook_registry = hook_registry
         self._use_plan_execution = use_plan_execution
+        self._session_ctx = session_ctx
 
     def run(self, user_text: str, cancellation_token: CancellationToken | None = None) -> AgentResult:
         token = cancellation_token or self.cancellation_token
@@ -118,6 +123,10 @@ class AgentLoop:
 
         user_message = Message(role="user", content=user_text)
         monitor.event("message_received", {"message": user_message.to_dict()})
+
+        # Wire session context for multi-turn history windowing.
+        if self._session_ctx is not None:
+            self._session_ctx.add_message(user_message)
 
         stopped = self._stop_state(started, action_steps_used, token)
         if stopped is not None:
@@ -162,6 +171,17 @@ class AgentLoop:
             self._audit(run_id, "memory_injected", {"memory_count": len(approved_memories)})
             if self._hook_registry is not None:
                 self._hook_registry.fire("memory_injected", {"memory_count": len(approved_memories)})
+
+        if self._session_ctx is not None:
+            recent = self._session_ctx.recent_history(n=20)
+            if recent:
+                from .redaction import redact
+                history_lines = [f"{m.role}: {redact(str(m.content))[:100]}" for m in recent]
+                history_text = "\n".join(history_lines)
+                if memory_context is None:
+                    memory_context = {}
+                # Prepared for future LLM context injection — no model adapter reads this key yet.
+                memory_context["conversation_history"] = history_text
 
         try:
             action = self.model.choose_action(intent, context=memory_context)
@@ -308,6 +328,16 @@ class AgentLoop:
             except Exception as exc:
                 monitor.event("plan_execution_failed", {"error": str(exc)})
 
+        # Compress session history when threshold exceeded — compress_history() returns []
+        # when under threshold, so no outer guard is needed.
+        if self._session_ctx is not None:
+            proposed = self._session_ctx.compress_history()
+            if proposed:
+                monitor.event("session_history_compressed", {
+                    "session_id": self._session_ctx.session_id,
+                    "proposed_memory_count": len(proposed),
+                })
+
         monitor.finish("completed", {"final_answer": final.to_dict()})
         self._audit(run_id, "run_completed", {"final_answer": final.to_dict()})
         return self._result(
@@ -318,7 +348,7 @@ class AgentLoop:
             query_plan=query_plan,
             plan_shadow=plan_shadow,
             plan_execution=plan_execution,
-            memory_summary=memory_context["memory_summary"] if memory_context else None,
+            memory_summary=memory_context.get("memory_summary") if memory_context else None,
             eval_result=_eval_result,
         )
 
