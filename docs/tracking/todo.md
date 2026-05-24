@@ -252,6 +252,6 @@ Acceptance criteria:
   - `AgentLoop.summarize_session()` + CLI `--memory-dir` → SessionSummarizer after run
   - `SessionContext.recent_history(n=20)` — context windowing
 - `[x]` Merge `claude/general` → `main` PR #1 opened.
-- `[ ]` P11: Human Gate real interrupt (webhook/CLI prompt for requires_approval steps).
-- `[ ]` P11: Context compression/retrieval (summarize old turns → MemoryRecord).
-- `[ ]` P11: LLM-based semantic self-evaluation (upgrade SelfEvaluator beyond structural checks).
+- `[x]` P11: Human Gate real interrupt — `make_cli_approval_callback()` with stdin prompt + timeout.
+- `[x]` P11: Context compression/retrieval — `compress_history()` + session_ctx wired into AgentLoop.
+- `[x]` P11: LLM-based semantic self-evaluation — `SelfEvaluator(llm_critic=callable)` with graceful fallback.

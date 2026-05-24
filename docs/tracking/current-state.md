@@ -360,18 +360,8 @@ Closed gaps identified by 12-principle Agentic Engineering review:
 
 ## Next Action
 
-P10 is complete. Next focus is **P11** on branch `claude/general`:
-
-- **Human Gate real interrupt**: webhook or CLI prompt that pauses execution
-  when a `PlanStep` has `requires_approval=True`, waits for operator decision,
-  and resumes or aborts.
-- **Context compression/retrieval**: summarize old conversation turns into
-  `MemoryRecord` to prevent context explosion; wire `recent_history()` into
-  `AgentLoop` for multi-turn sessions.
-- **LLM-based semantic self-evaluation**: upgrade `SelfEvaluator` beyond 5
-  structural checks to LLM-critique when a model provider is configured.
-
-Secondary (Milestone 7 hardening, not yet started):
+P11 is complete (2026-05-24). P1–P11 of the general agent design are done.
+Next focus: **Milestone 7 hardening** (self-evolution controls, secondary wave):
 
 - Add JSON Schema files for self-evolution artifacts if external tools will
   produce candidates, memory records, rollback plans, or drift fixtures.
@@ -379,7 +369,11 @@ Secondary (Milestone 7 hardening, not yet started):
   an apply workflow.
 - Design candidate review/approval CLI states with reviewer identity,
   timestamps, reject/change-request states, and audit records.
+- Add rollback execution design only after artifact hashes and reviewer
+  identity are defined.
 - Keep automatic self-modification, prompt rewrites, and policy rewrites closed.
+
+See `docs/tracking/next-work-queue.md` § "Milestone 7 Hardening" for detail.
 
 Persistent workflow approval/resume and real target-system writes must remain
 closed until signed or hashed checkpoint persistence, approval authorization,
@@ -470,7 +464,7 @@ bin/agent status --run-dir /tmp/afs-runs-2
 bin/agent status --run-dir /tmp/afs-workflow-intent2
 ```
 
-Latest full test run (2026-05-24, after P10 merge): **450 tests / 109 subtests passed**.
+Latest full test run (2026-05-24, after P11): **478 tests / 109 subtests passed**.
 
 ```bash
 uv run --python 3.13 python -m pytest -q

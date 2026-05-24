@@ -412,9 +412,16 @@ New artifacts: `artifacts/schemas/plan.schema.v1.json`,
 
 See `docs/tracking/change-log.md` § 2026-05-24 for full detail.
 
-## Next Implementation Wave — P11 (General Agent)
+## Completed P11 Wave (2026-05-24)
 
-Three open P11 items on branch `claude/general`:
+All three P11 items implemented on branch `claude/general` (commit 8802ebc).
+478 tests / 109 subtests pass. Security + code + architect reviews passed.
+
+See `docs/tracking/change-log.md` § 2026-05-24 for full detail.
+
+## P11 Reference — (archived, completed)
+
+Three completed P11 items on branch `claude/general`:
 
 ### P11-A: Human Gate Real Interrupt
 

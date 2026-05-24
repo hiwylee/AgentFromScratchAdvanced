@@ -485,3 +485,39 @@ direction and implementation changes, not every tiny edit.
 - Partially covered: Human Gate (approval_callback exists; real interrupt is
   P11), Evaluation (offline golden evals only).
 - Not yet covered: Context compression/retrieval (P11+).
+
+### P11 — Human Gate, Context Compression, LLM Self-Evaluation (2026-05-24)
+
+- Added `make_cli_approval_callback(timeout_seconds=30.0)` to `executor.py`.
+  Returns a callback that prompts stdin with step info (id, description,
+  risk level, capabilities) and waits up to 30 s for y/n. Non-interactive
+  stdin returns False immediately (abort-safe default). Uses
+  `concurrent.futures.ThreadPoolExecutor` for the timeout.
+- Added `SessionContext.compress_history(threshold=40)` to `session.py`.
+  Summarizes turns older than the recent window into a proposed `MemoryRecord`
+  (status="proposed", review_status="pending"). Applies `redact()` to summary
+  text, uses timestamp-suffixed `memory_id`, guards `window=0`. Never
+  auto-applies compressed memories.
+- Wired `session_ctx` into `AgentLoop.__init__` and `run()`. Each user
+  message is added to the session; `recent_history(n=20)` is injected into
+  model context (with `redact()`); `compress_history()` is called after each
+  run (returns [] when under threshold — no redundant outer guard needed).
+- Added optional `llm_critic: Callable[[str, str], str] | None` to
+  `SelfEvaluator`. Runs after 5 structural checks; false-positive bare
+  `"issue"` substring removed from detection markers; `SecretLeakError`
+  re-raised (project invariant); other exceptions degrade gracefully.
+- Security review fixes: `SecretLeakError` explicitly re-raised in LLM
+  critique except block; `redact()` applied to history injection and
+  compress_history summary.
+- Added 28 new tests across `test_executor_approval.py`,
+  `test_context_compression.py`, and `test_self_evaluator_llm.py`.
+  Full suite: 478 tests / 109 subtests passed.
+
+### Agentic Engineering 12-principle coverage after P11
+
+All 12 principles now have at least partial coverage:
+- Fully covered: Goal-driven, Planning, Tool Use, Infinite Loop Prevention,
+  Tool Reliability, Observability.
+- Covered: Memory (windowing + compression), Reflection (structural + optional
+  LLM critique), Human Gate (CLI interrupt), Evaluation (offline golden evals).
+- Deferred: Context compression to LLM-driven summary (future).
