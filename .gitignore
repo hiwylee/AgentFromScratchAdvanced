@@ -33,3 +33,6 @@ __pycache__/
 .DS_Store
 *.swp
 .omc/
+
+# Claude Code agent worktrees (created by parallel agent runs)
+.claude/worktrees/

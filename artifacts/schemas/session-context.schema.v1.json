@@ -38,12 +38,12 @@
   "$defs": {
     "ConversationSlot": {
       "type": "object",
-      "required": ["key", "value", "source_step_id", "captured_at"],
+      "required": ["key", "value", "source_step_id", "created_at"],
       "properties": {
         "key": { "type": "string" },
         "value": {},
         "source_step_id": { "type": "string" },
-        "captured_at": { "type": "string", "format": "date-time" }
+        "created_at": { "type": "string", "format": "date-time" }
       },
       "additionalProperties": false
     },

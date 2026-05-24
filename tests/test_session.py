@@ -217,5 +217,65 @@ class SessionContextPersistenceTests(unittest.TestCase):
             self.assertEqual([], loaded.conversation_history)
 
 
+class SessionContextSchemaValidationTests(unittest.TestCase):
+    """Validate actual save() output against session-context.schema.v1.json."""
+
+    _SCHEMA_PATH = (
+        Path(__file__).resolve().parent.parent
+        / "artifacts" / "schemas" / "session-context.schema.v1.json"
+    )
+
+    def _load_schema(self) -> dict | None:
+        if not self._SCHEMA_PATH.exists():
+            return None
+        import json as _json
+        return _json.loads(self._SCHEMA_PATH.read_text(encoding="utf-8"))
+
+    def _saved_state(self, session: SessionContext) -> dict:
+        import json as _json
+        with tempfile.TemporaryDirectory() as tmp:
+            session_dir = Path(tmp) / session.session_id
+            session.save(session_dir)
+            return _json.loads((session_dir / "state.json").read_text(encoding="utf-8"))
+
+    def test_save_state_validates_against_schema_no_slots(self):
+        session = SessionContext(session_id="schema-test-1")
+        state = self._saved_state(session)
+        schema = self._load_schema()
+        if schema is None:
+            self.skipTest("schema file not found")
+        try:
+            import jsonschema  # type: ignore[import-untyped]
+            jsonschema.validate(instance=state, schema=schema)
+        except ImportError:
+            self.assertIn("session_id", state)
+            self.assertIn("slots", state)
+
+    def test_save_state_with_slot_validates_against_schema(self):
+        session = SessionContext(session_id="schema-test-2")
+        session.set_slot("dim", "product", source_step_id="step-1")
+        state = self._saved_state(session)
+        schema = self._load_schema()
+        if schema is None:
+            self.skipTest("schema file not found")
+        slot = list(state["slots"].values())[0]
+        # created_at must be present (not captured_at)
+        self.assertIn("created_at", slot)
+        self.assertNotIn("captured_at", slot)
+        try:
+            import jsonschema  # type: ignore[import-untyped]
+            jsonschema.validate(instance=state, schema=schema)
+        except ImportError:
+            self.assertIn("created_at", slot)
+
+    def test_slot_field_name_is_created_at_not_captured_at(self):
+        session = SessionContext(session_id="schema-test-3")
+        session.set_slot("key1", "val1", source_step_id="s1")
+        state = self._saved_state(session)
+        slot = list(state["slots"].values())[0]
+        self.assertIn("created_at", slot, "slot must use created_at field name")
+        self.assertNotIn("captured_at", slot, "captured_at is the old schema drift name")
+
+
 if __name__ == "__main__":
     unittest.main()
