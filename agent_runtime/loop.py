@@ -46,6 +46,7 @@ class AgentResult:
 
     query_plan: dict[str, object] | None = None
     plan_shadow: dict[str, object] | None = None
+    plan_execution: dict[str, object] | None = None
     memory_summary: str | None = None
 
     def to_dict(self) -> dict[str, object]:
@@ -62,6 +63,8 @@ class AgentResult:
             result["query_plan"] = self.query_plan
         if self.plan_shadow is not None:
             result["plan_shadow"] = self.plan_shadow
+        if self.plan_execution is not None:
+            result["plan_execution"] = self.plan_execution
         if self.memory_summary is not None:
             result["memory_summary"] = self.memory_summary
         return result
@@ -80,6 +83,7 @@ class AgentLoop:
         audit_path: Path = Path(".agent/audit.jsonl"),
         memory_dir: Path | None = None,
         hook_registry: HookRegistry | None = None,
+        use_plan_execution: bool = False,
     ) -> None:
         self.model = model or MockModel()
         self.budget = budget or Budget()
@@ -90,6 +94,7 @@ class AgentLoop:
         self.audit_path = audit_path
         self._memory_dir = memory_dir
         self._hook_registry = hook_registry
+        self._use_plan_execution = use_plan_execution
 
     def run(self, user_text: str, cancellation_token: CancellationToken | None = None) -> AgentResult:
         token = cancellation_token or self.cancellation_token
@@ -228,6 +233,7 @@ class AgentLoop:
 
         # Shadow mode: generate plan artifact without changing execution flow.
         plan_shadow: dict[str, object] | None = None
+        plan: "ExecutionPlan | None" = None  # type: ignore[name-defined]
         try:
             from .executor import StepExecutor
             from .intent import KeywordIntentClassifier
@@ -246,6 +252,39 @@ class AgentLoop:
         except Exception as exc:
             monitor.event("plan_shadow_failed", {"error": str(exc)})
 
+        # Opt-in real plan execution — additive to single-pass flow.
+        plan_execution: dict[str, object] | None = None
+        if self._use_plan_execution and plan is not None:
+            try:
+                from .executor import StepExecutor
+                real_runner = ToolRunner(
+                    self.tool_registry,
+                    context=ToolExecutionContext(run_id=run_id, audit_path=self.audit_path),
+                    event_sink=monitor.event,
+                    hook_registry=self._hook_registry,
+                )
+                real_results = StepExecutor().run_plan(
+                    plan, real_runner, tool_registry=self.tool_registry
+                )
+                plan_execution = {
+                    "plan_id": run_id,
+                    "step_results": [r.to_dict() for r in real_results],
+                    "aborted": any(
+                        r.error.startswith("aborted_by_step:") for r in real_results
+                    ),
+                }
+                monitor.event(
+                    "plan_execution_completed",
+                    {"plan_id": run_id, "steps": len(real_results)},
+                )
+                if self._hook_registry is not None:
+                    self._hook_registry.fire(
+                        "plan_execution_completed",
+                        {"plan_id": run_id, "steps": len(real_results)},
+                    )
+            except Exception as exc:
+                monitor.event("plan_execution_failed", {"error": str(exc)})
+
         monitor.finish("completed", {"final_answer": final.to_dict()})
         self._audit(run_id, "run_completed", {"final_answer": final.to_dict()})
         return self._result(
@@ -255,6 +294,7 @@ class AgentLoop:
             final,
             query_plan=query_plan,
             plan_shadow=plan_shadow,
+            plan_execution=plan_execution,
             memory_summary=memory_context["memory_summary"] if memory_context else None,
         )
 
@@ -307,6 +347,7 @@ class AgentLoop:
         final: FinalAnswer,
         query_plan: QueryPlanArtifact | None = None,
         plan_shadow: dict[str, object] | None = None,
+        plan_execution: dict[str, object] | None = None,
         memory_summary: str | None = None,
     ) -> AgentResult:
         return AgentResult(
@@ -319,6 +360,7 @@ class AgentLoop:
             audit_path=str(self.audit_path),
             query_plan=query_plan.to_dict() if query_plan is not None else None,
             plan_shadow=plan_shadow,
+            plan_execution=plan_execution,
             memory_summary=memory_summary,
         )
 
