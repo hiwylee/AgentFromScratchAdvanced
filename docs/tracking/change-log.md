@@ -521,3 +521,33 @@ All 12 principles now have at least partial coverage:
 - Covered: Memory (windowing + compression), Reflection (structural + optional
   LLM critique), Human Gate (CLI interrupt), Evaluation (offline golden evals).
 - Deferred: Context compression to LLM-driven summary (future).
+
+### M7 Hardening — JSON Schemas, Content Hash, Review CLI (2026-05-24)
+
+Secondary Milestone 7 hardening wave completed on branch `claude/general`:
+
+- Added 4 JSON Schema files (`improvement-candidate.schema.v1.json`,
+  `memory-record.schema.v1.json`, `rollback-plan.schema.v1.json`,
+  `gate-report.schema.v1.json`) with `additionalProperties: false` at every
+  level; all property names match the Python dataclass `to_dict()` output.
+- Added `ImprovementCandidateRecord.content_hash` — SHA-256 over a compact
+  canonical JSON of stable fields (candidate_id, candidate_type, summary,
+  proposed_change, affected_artifacts, trigger_type). Auto-computed in
+  `build_improvement_candidate()`; verified via `verify_candidate_hash()`.
+  Canonical field key `"artifact_path"` intentionally differs from the
+  serialized `"path"` key — do not change without re-hashing all candidates.
+- Added `operator review-candidate` CLI (list / show / approve / reject):
+  - `review.decision != "pending"` guard prevents double-approve or
+    double-reject (the correct check — `status` stays "proposed" after a review).
+  - Non-empty `--reviewer` enforced before any write.
+  - `_find_candidate_path()` validates candidate_id via
+    `re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,127}", ...)` — path traversal
+    rejected before file lookup.
+  - All print and audit output passes through `redact()`.
+- Security fixes from expert review:
+  - `SecretLeakError` re-raised in drift check (was silently caught).
+  - `utc_now` moved to module-level import.
+  - Path traversal validation added to `_find_candidate_path()`.
+- Added 9 tests: hash round-trip, guard enforcement, path traversal rejection,
+  double-approve / double-reject guard, audit path wiring.
+- Full suite: **493 tests passed**.

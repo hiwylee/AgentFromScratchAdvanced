@@ -360,38 +360,30 @@ Closed gaps identified by 12-principle Agentic Engineering review:
 
 ## Next Action
 
-P11 is complete (2026-05-24). P1–P11 of the general agent design are done.
-Next focus: **Milestone 7 hardening** (self-evolution controls, secondary wave):
+M7 hardening is complete (2026-05-24). P1–P11 + M7 of the general agent design
+are done on branch `claude/general` (493 tests passing).
 
-- Add JSON Schema files for self-evolution artifacts if external tools will
-  produce candidates, memory records, rollback plans, or drift fixtures.
-- Add candidate hash/signature fields before any persisted candidate can feed
-  an apply workflow.
-- Design candidate review/approval CLI states with reviewer identity,
-  timestamps, reject/change-request states, and audit records.
-- Add rollback execution design only after artifact hashes and reviewer
-  identity are defined.
-- Keep automatic self-modification, prompt rewrites, and policy rewrites closed.
+Next focus options:
 
-See `docs/tracking/next-work-queue.md` § "Milestone 7 Hardening" for detail.
+- **PR #1 merge** (`claude/general` → `main`): all tests pass; merge when ready.
+- **Milestone 8**: real database tool integration or external API tool.
+- **Production hardening**: replace prototype `SELECT ANY TABLE` grant with
+  narrower object-level grants for `AIAGENT`.
 
 Persistent workflow approval/resume and real target-system writes must remain
 closed until signed or hashed checkpoint persistence, approval authorization,
 idempotency, and replay protection are designed. Admin provisioning apply
-remains operator-only and live; production hardening should still replace the
-prototype `SELECT ANY TABLE` profile with narrower object-level grants.
+remains operator-only and live.
 Operator ADW smoke, read-only query, and provisioning commands remain explicit
 operator checks only; normal `agent ask`, schema context, query planning, fake
 explanations, and default tools must not enable live execution.
 
 Recommended starting point:
 
-- Open `agent_runtime/self_evolution.py`, `agent_runtime/cli.py`,
-  `agent_runtime/sqlcl_runner.py`, and `tests/test_cli.py` before continuing
-  self-evolution or operator safety hardening.
-- If adding external candidate producers, create JSON Schema files for
-  improvement candidates, rollback plans, memory records, drift fixtures, and
-  gate reports.
+- For self-evolution or operator safety: open `agent_runtime/self_evolution.py`,
+  `agent_runtime/cli.py`, and `tests/test_review_candidate_cli.py`.
+- For Milestone 8 tool integration: open `agent_runtime/tools.py`,
+  `agent_runtime/executor.py`, and `agent_runtime/loop.py`.
 - Keep `agent ask`, schema context, query planning, and fake result explanation
   paths non-live unless a future reviewed plan explicitly changes that boundary.
 
@@ -464,7 +456,7 @@ bin/agent status --run-dir /tmp/afs-runs-2
 bin/agent status --run-dir /tmp/afs-workflow-intent2
 ```
 
-Latest full test run (2026-05-24, after P11): **478 tests / 109 subtests passed**.
+Latest full test run (2026-05-24, after M7 hardening): **493 tests passed**.
 
 ```bash
 uv run --python 3.13 python -m pytest -q
