@@ -9,6 +9,7 @@ from typing import Any
 from uuid import uuid4
 
 from .audit import RunRecord, append_audit
+from .hooks import HookRegistry
 from .intent import analyze_user_intent
 from .model import ActionModel, MockModel, ModelInvocationError
 from .monitor import RunMonitor
@@ -78,6 +79,7 @@ class AgentLoop:
         run_root: Path = Path(".agent/runs"),
         audit_path: Path = Path(".agent/audit.jsonl"),
         memory_dir: Path | None = None,
+        hook_registry: HookRegistry | None = None,
     ) -> None:
         self.model = model or MockModel()
         self.budget = budget or Budget()
@@ -87,6 +89,7 @@ class AgentLoop:
         self.run_root = run_root
         self.audit_path = audit_path
         self._memory_dir = memory_dir
+        self._hook_registry = hook_registry
 
     def run(self, user_text: str, cancellation_token: CancellationToken | None = None) -> AgentResult:
         token = cancellation_token or self.cancellation_token
@@ -123,6 +126,8 @@ class AgentLoop:
             },
         )
         self._audit(run_id, "intent_analyzed", {"intent": intent_data})
+        if self._hook_registry is not None:
+            self._hook_registry.fire("intent_analyzed", {"intent": intent_data})
 
         stopped = self._stop_state(started, action_steps_used, token, check_max_steps=True)
         if stopped is not None:
@@ -144,6 +149,8 @@ class AgentLoop:
                 {"memory_count": len(approved_memories), "memory_ids": [m.memory_id for m in approved_memories]},
             )
             self._audit(run_id, "memory_injected", {"memory_count": len(approved_memories)})
+            if self._hook_registry is not None:
+                self._hook_registry.fire("memory_injected", {"memory_count": len(approved_memories)})
 
         try:
             action = self.model.choose_action(intent, context=memory_context)
@@ -234,6 +241,8 @@ class AgentLoop:
                 "shadow_mode": True,
             }
             monitor.event("plan_shadow_recorded", {"plan_id": run_id, "steps": len(plan.steps)})
+            if self._hook_registry is not None:
+                self._hook_registry.fire("plan_shadow_recorded", {"plan_id": run_id, "steps": len(plan.steps)})
         except Exception as exc:
             monitor.event("plan_shadow_failed", {"error": str(exc)})
 
