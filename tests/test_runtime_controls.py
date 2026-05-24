@@ -1380,7 +1380,7 @@ class RuntimeControlTests(unittest.TestCase):
         self.assertNotIn("operator_adw_query", specs)
         self.assertNotIn("operator_adw_provision_working_user", specs)
         self.assertNotIn("sql_execution", specs)
-        self.assertEqual(["mock_schema_context"], specs)
+        self.assertEqual(["mock_schema_context", "mock_data_query"], specs)
 
 
 class CancelDuringActionSelection:

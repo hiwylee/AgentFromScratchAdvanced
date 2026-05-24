@@ -8,6 +8,7 @@ from time import monotonic
 from typing import Any, Callable, Literal, Protocol
 
 from .audit import RunRecord, append_audit
+from .hooks import HookRegistry
 from .query_plan import QueryPlanArtifact, build_query_plan_from_context
 from .redaction import redact
 from .result_explanation import build_fake_result_explanation
@@ -188,6 +189,37 @@ def default_tool_registry() -> ToolRegistry:
         ),
         _mock_schema_context,
     )
+    registry.register(
+        ToolSpec(
+            name="mock_data_query",
+            description="Return deterministic fake query results for Oracle ADW SH schema without live execution.",
+            parameters=(
+                ToolParameter(
+                    name="query_plan_id",
+                    type="string",
+                    required=False,
+                    description="Query plan artifact ID to simulate results for.",
+                ),
+                ToolParameter(
+                    name="dimension",
+                    type="string",
+                    required=False,
+                    description="Dimension to group results by (product, channel, promotion).",
+                ),
+                ToolParameter(
+                    name="metric",
+                    type="string",
+                    required=False,
+                    description="Metric to aggregate (revenue, count).",
+                ),
+            ),
+            risk_level="low",
+            read_only=True,
+            capabilities=("oracle_sh.data.read",),
+            cost_estimate="fast",
+        ),
+        _mock_data_query,
+    )
     return registry
 
 
@@ -198,10 +230,12 @@ class ToolRunner:
         *,
         context: ToolExecutionContext,
         event_sink: ToolEventSink | None = None,
+        hook_registry: HookRegistry | None = None,
     ) -> None:
         self.registry = registry
         self.context = context
         self.event_sink = event_sink
+        self.hook_registry = hook_registry
 
     def run(self, call: ToolCall, *, max_attempts: int = 1) -> ToolResult:
         started = monotonic()
@@ -278,6 +312,8 @@ class ToolRunner:
         )
         if self.event_sink is not None:
             self.event_sink(event, redact(data))
+        if self.hook_registry is not None:
+            self.hook_registry.fire(event, redact(data))
 
 
 def _policy_error(spec: ToolSpec, context: ToolExecutionContext) -> str:
@@ -427,6 +463,27 @@ def _fake_result_explanation_adapter(query_plan: QueryPlanArtifact) -> FakeSqlEx
                 },
             )
     return None
+
+
+def _mock_data_query(args: dict[str, Any]) -> dict[str, Any]:
+    dimension = str(args.get("dimension", "product"))
+    metric = str(args.get("metric", "revenue"))
+    query_plan_id = str(args.get("query_plan_id", ""))
+    return {
+        "mode": "mock_data_query_read_only",
+        "external_access": False,
+        "real_database_execution": False,
+        "oracle_adw_execution": False,
+        "query_plan_id": query_plan_id,
+        "dimension": dimension,
+        "metric": metric,
+        "rows": [
+            {dimension: "demo_value_alpha", metric: 1000},
+            {dimension: "demo_value_beta", metric: 1250},
+        ],
+        "row_count": 2,
+        "note": "Deterministic fake results — not from Oracle ADW.",
+    }
 
 
 _FAKE_RESULT_EXPLANATION_FIXTURES: dict[tuple[str, ...], dict[str, Any]] = {

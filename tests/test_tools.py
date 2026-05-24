@@ -67,7 +67,7 @@ class ToolRegistryTests(unittest.TestCase):
 
         specs = registry.specs()
 
-        self.assertEqual(["mock_schema_context"], [spec["name"] for spec in specs])
+        self.assertEqual(["mock_schema_context", "mock_data_query"], [spec["name"] for spec in specs])
         self.assertTrue(all(spec["read_only"] for spec in specs))
         self.assertTrue(all(spec["risk_level"] == "low" for spec in specs))
         self.assertEqual(

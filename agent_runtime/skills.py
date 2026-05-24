@@ -74,3 +74,27 @@ class SkillRegistry:
     def specs(self) -> list[dict[str, Any]]:
         """Return all skill specs as dicts."""
         return [spec.to_dict() for spec in self._skills.values()]
+
+
+def default_skill_registry() -> SkillRegistry:
+    """Return a SkillRegistry with built-in skills for the Oracle SH domain."""
+    registry = SkillRegistry()
+
+    def _schema_and_query_handler(args: dict[str, Any]) -> dict[str, Any]:
+        return {
+            "skill": "schema_and_query",
+            "required_capabilities": ["oracle_sh.schema.read", "oracle_sh.data.read"],
+            "args": args,
+            "note": "Skill handler — orchestration via ToolRunner not yet wired.",
+        }
+
+    registry.register(
+        SkillSpec(
+            name="schema_and_query",
+            description="Inspect Oracle SH schema then query data — combines schema.read and data.read.",
+            required_capabilities=("oracle_sh.schema.read", "oracle_sh.data.read"),
+            handler=_schema_and_query_handler,
+            version="1.0",
+        )
+    )
+    return registry
