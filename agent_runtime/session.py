@@ -86,6 +86,21 @@ class SessionContext:
     def add_message(self, message: Message) -> None:
         self.conversation_history.append(message)
 
+    def recent_history(self, n: int = 20) -> list[Message]:
+        """Return the last *n* messages from conversation_history.
+
+        Used for LLM context injection to prevent context explosion.
+        If n <= 0, returns all messages (same as conversation_history).
+
+        P11 note: AgentLoop is currently single-turn and does not maintain a
+        SessionContext across calls. This method is a foundation for multi-turn
+        context management — wire into model.choose_action(context=) when
+        AgentLoop gains persistent session support.
+        """
+        if n <= 0:
+            return list(self.conversation_history)
+        return list(self.conversation_history[-n:])
+
     def set_slot(self, key: str, value: Any, source_step_id: str = "") -> None:
         self.slots[key] = ConversationSlot(
             key=key,

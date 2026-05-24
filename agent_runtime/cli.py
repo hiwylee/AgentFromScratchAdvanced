@@ -86,6 +86,11 @@ def main(argv: Sequence[str] | None = None) -> int:
         default=None,
         help="OpenAI-compatible request timeout; defaults to provider env or 30",
     )
+    ask_parser.add_argument(
+        "--memory-dir",
+        default=None,
+        help="directory for cross-session memory records; enables session summarization on completion",
+    )
 
     status_parser = subparsers.add_parser("status", help="show latest run status")
     status_parser.add_argument("--run-dir", default=str(DEFAULT_RUN_DIR))
@@ -203,6 +208,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             openai_model=args.openai_model,
             openai_base_url=args.openai_base_url,
             openai_timeout_seconds=args.openai_timeout_seconds,
+            memory_dir=Path(args.memory_dir) if args.memory_dir else None,
         )
     if args.command == "status":
         return _status(Path(args.run_dir))
@@ -268,6 +274,7 @@ def _ask(
     openai_model: str | None,
     openai_base_url: str | None,
     openai_timeout_seconds: float | None,
+    memory_dir: Path | None = None,
 ) -> int:
     user_text = " ".join(text_parts)
     try:
@@ -288,9 +295,25 @@ def _ask(
         print(json.dumps(redact(payload), ensure_ascii=False, indent=2))
         return 2
 
-    loop = AgentLoop(run_root=run_dir, audit_path=audit_path, budget=budget, model=model)
+    loop = AgentLoop(
+        run_root=run_dir,
+        audit_path=audit_path,
+        budget=budget,
+        model=model,
+        memory_dir=memory_dir,  # load approved memories AND write proposed ones
+    )
     result = loop.run(user_text)
     print(json.dumps(result.to_dict(), ensure_ascii=False, indent=2))
+    if memory_dir is not None:
+        summary = loop.summarize_session(
+            run_results=[result.to_dict()],
+            memory_dir=memory_dir,
+            session_id=result.run_id,
+        )
+        if summary is not None and summary.failure_patterns:
+            print(f"[session] {len(summary.failure_patterns)} failure pattern(s) captured → review at {memory_dir}")
+            for path in summary.proposed_memory_paths:
+                print(f"[session] proposed: {path}")
     return 0
 
 

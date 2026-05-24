@@ -321,32 +321,42 @@ Oracle ADW natural-language data access as the first domain specialization.
   values are rejected, behavior-shaping candidate type checks are stricter, and
   pytest can run from the repository root through `pyproject.toml`.
 
-## General Agent Architecture (claude/general branch — completed 2026-05-24)
+## General Agent Architecture (claude/general branch — P1–P10 complete, 2026-05-24)
 
-Implemented P1–P7 of the general-purpose agent design on branch `claude/general`.
-352 tests pass; all architect reviews APPROVED with no CRITICAL/HIGH issues.
+Implemented P1–P10 of the general-purpose agent design on branch `claude/general`.
+All tests pass; Codex adversarial review + QA PASSED; PR #1 open (claude/general → main).
 
-Key new files:
+### P1–P7 (initial implementation)
 - `agent_runtime/planner.py` — PlanStep + ExecutionPlan with Kahn topological sort
-- `agent_runtime/executor.py` — StepExecutor shadow mode (plan artifact without changing execution)
-- `agent_runtime/verifier.py` — ToolResultVerifier, FailureReason taxonomy, regex-only criteria
-- `agent_runtime/session.py` — SessionContext, BudgetTracker, ConversationSlot, file-split persistence
+- `agent_runtime/executor.py` — StepExecutor + run_plan_shadow()
+- `agent_runtime/verifier.py` — ToolResultVerifier, FailureReason taxonomy
+- `agent_runtime/session.py` — SessionContext, BudgetTracker, ConversationSlot
 - `agent_runtime/hooks.py` — HookRegistry (redact enforced, per-handler isolation)
-- `agent_runtime/skills.py` — SkillRegistry infrastructure (no skills registered yet)
+- `agent_runtime/skills.py` — SkillRegistry + default_skill_registry()
 - `artifacts/schemas/plan.schema.v1.json`, `session-context.schema.v1.json`
 
-Key modifications:
-- `types.py`: IntentResult, ConversationSlot, FailureReason, SuggestedAction
-- `intent.py`: KeywordIntentClassifier + from_user_intent(), IntentClassifier protocol
-- `tools.py`: ToolSpec.capabilities/cost_estimate, find_tools_by_capabilities, all_registered()
-- `self_evolution.py`: _intent_signature() 3-way dispatch, load_active_memories()
-- `model.py`: ActionModel.choose_action(context=) — optional memory injection
-- `loop.py`: AgentResult.plan_shadow + memory_summary; AgentLoop(memory_dir, hook_registry)
+### P8 — Real Plan Execution (2026-05-24)
+- `executor.py`: `StepExecutor.run_plan()` — real tool calls, retry/skip/abort/clarify/use_alternative
+- `executor.py`: `approval_callback` gate for `requires_approval=True` steps
+- `loop.py`: `AgentLoop(use_plan_execution=False)` flag + `AgentResult.plan_execution`
 
-Remaining before main merge:
-- `claude/general` → `main` PR review
-- Register second tool to activate SkillRegistry composition
-- Wire ToolRunner events through HookRegistry (tool_started / tool_completed)
+### P9 — Reflection Loop (2026-05-24)
+- `agent_runtime/self_evaluator.py` — deterministic 5-check answer quality (SelfEvaluator)
+- `agent_runtime/session_summarizer.py` — failure-pattern extraction → proposed MemoryRecord
+
+### P10 — Agentic Engineering Wiring (2026-05-24)
+Closed gaps identified by 12-principle Agentic Engineering review:
+- `loop.py`: SelfEvaluator wired after final_answer → `AgentResult.eval_result`
+- `loop.py`: `AgentLoop.summarize_session()` — calls SessionSummarizer after run
+- `session.py`: `SessionContext.recent_history(n=20)` — context windowing
+- `cli.py`: `--memory-dir` arg → calls summarize_session after ask subcommand
+- Hook event `answer_evaluated` fires with passed/score/issues
+
+### Agentic Engineering 12-principle coverage
+✅ Goal-driven, Planning, Tool Use, Infinite Loop Prevention, Tool Reliability, Observability
+⚠️ Memory (windowing added, compression future), Reflection (structural only, LLM critique future)
+⚠️ Human Gate (approval_callback exists, real interrupt P11), Evaluation (offline only)
+❌ Context compression/retrieval (P11+)
 
 ## Next Action
 

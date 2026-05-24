@@ -48,6 +48,10 @@ class AgentResult:
     plan_shadow: dict[str, object] | None = None
     plan_execution: dict[str, object] | None = None
     memory_summary: str | None = None
+    eval_result: dict[str, object] | None = None  # SelfEvaluator answer-quality output
+    # NOTE: this is NOT the acceptance-gate EvalRunResult from self_evolution.py
+    # (schema "agent-runtime.eval-result.v1"). It holds SelfEvaluator.to_dict()
+    # shape: {passed: bool, score: float, issues: list[str], suggestions: list[str]}.
 
     def to_dict(self) -> dict[str, object]:
         result: dict[str, object] = {
@@ -67,6 +71,8 @@ class AgentResult:
             result["plan_execution"] = self.plan_execution
         if self.memory_summary is not None:
             result["memory_summary"] = self.memory_summary
+        if self.eval_result is not None:
+            result["eval_result"] = self.eval_result
         return result
 
 
@@ -231,6 +237,23 @@ class AgentLoop:
 
         final = _final_answer(action, query_plan=query_plan)
 
+        # Evaluate answer quality (deterministic, no LLM).
+        _eval_result: dict[str, object] | None = None
+        try:
+            from .self_evaluator import SelfEvaluator
+            _eval = SelfEvaluator().evaluate(user_text, final.to_dict())
+            _eval_result = _eval.to_dict()
+            monitor.event("answer_evaluated", {
+                "passed": _eval.passed,
+                "score": _eval.score,
+                "issues": _eval.issues,
+            })
+            self._audit(run_id, "answer_evaluated", {"eval": _eval_result})
+            if self._hook_registry is not None:
+                self._hook_registry.fire("answer_evaluated", {"eval": _eval_result})
+        except (AttributeError, TypeError, ValueError, KeyError, ImportError) as exc:
+            monitor.event("answer_eval_failed", {"error": str(exc)})
+
         # Shadow mode: generate plan artifact without changing execution flow.
         plan_shadow: dict[str, object] | None = None
         plan: "ExecutionPlan | None" = None  # type: ignore[name-defined]
@@ -296,7 +319,43 @@ class AgentLoop:
             plan_shadow=plan_shadow,
             plan_execution=plan_execution,
             memory_summary=memory_context["memory_summary"] if memory_context else None,
+            eval_result=_eval_result,
         )
+
+    def summarize_session(
+        self,
+        run_results: list[dict[str, object]],
+        memory_dir: Path,
+        session_id: str = "default",
+        author: str = "session_summarizer",
+    ) -> "SessionSummary | None":
+        """Summarize a completed session and write proposed MemoryRecord files.
+
+        Calls SessionSummarizer.summarize() and returns the SessionSummary.
+        Returns None if summarization fails (never raises).
+        Re-raises SecretLeakError — secret leaks must never be silenced.
+        """
+        import logging
+        try:
+            from .session_summarizer import SessionSummarizer, SessionSummary  # noqa: F401
+            summary = SessionSummarizer().summarize(
+                session_id=session_id,
+                run_results=run_results,
+                memory_dir=memory_dir,
+                author=author,
+            )
+            self._audit(session_id, "session_summarized", {
+                "failure_patterns": len(summary.failure_patterns),
+                "proposed_paths": summary.proposed_memory_paths,
+            })
+            return summary
+        except Exception as exc:
+            # Re-raise secret-leak errors — never silence them.
+            from .trace import SecretLeakError
+            if isinstance(exc, SecretLeakError):
+                raise
+            logging.getLogger(__name__).warning("summarize_session failed: %s", exc)
+            return None
 
     def _stop_state(
         self,
@@ -349,6 +408,7 @@ class AgentLoop:
         plan_shadow: dict[str, object] | None = None,
         plan_execution: dict[str, object] | None = None,
         memory_summary: str | None = None,
+        eval_result: dict[str, object] | None = None,
     ) -> AgentResult:
         return AgentResult(
             run_id=monitor.run_id,
@@ -362,6 +422,7 @@ class AgentLoop:
             plan_shadow=plan_shadow,
             plan_execution=plan_execution,
             memory_summary=memory_summary,
+            eval_result=eval_result,
         )
 
 
