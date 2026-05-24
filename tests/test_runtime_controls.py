@@ -1390,7 +1390,7 @@ class CancelDuringActionSelection:
     def __init__(self, token: CancellationToken) -> None:
         self.token = token
 
-    def choose_action(self, intent: UserIntent) -> Action:
+    def choose_action(self, intent: UserIntent, *, context: dict | None = None) -> Action:
         self.token.cancel("model_requested_cancel")
         return Action(
             kind="final_answer",
@@ -1403,7 +1403,7 @@ class SecretInspectSchemaModel:
     name = "secret-inspect-schema-model"
     version = "1"
 
-    def choose_action(self, intent: UserIntent) -> Action:
+    def choose_action(self, intent: UserIntent, *, context: dict | None = None) -> Action:
         return Action(
             kind="inspect_schema",
             reason="test schema inspection",

@@ -401,6 +401,43 @@ def load_memory_record(path: Path) -> MemoryRecord:
     return MemoryRecord.from_dict(_load_json(path))
 
 
+def load_active_memories(memory_dir: Path) -> list[MemoryRecord]:
+    """Load all approved active memories from memory_dir.
+
+    Only returns records where:
+      - status == "active"
+      - provenance.review_status == "approved"
+
+    Skips: missing dir, non-.json files, malformed/invalid records (logs skip reason).
+    Never raises — returns empty list on any error.
+    Preserves existing self-evolution gate: pending_review records are excluded.
+    """
+    import logging
+
+    logger = logging.getLogger(__name__)
+
+    if not memory_dir.exists():
+        return []
+
+    try:
+        paths = sorted(memory_dir.glob("*.json"))
+    except OSError as exc:
+        logger.debug("load_active_memories: cannot list %s: %s", memory_dir, exc)
+        return []
+
+    records: list[MemoryRecord] = []
+    for path in paths:
+        try:
+            record = load_memory_record(path)
+        except (ValueError, KeyError, json.JSONDecodeError, OSError) as exc:
+            logger.debug("load_active_memories: skipping %s: %s", path.name, exc)
+            continue
+        if record.status == "active" and record.provenance.review_status == "approved":
+            records.append(record)
+
+    return sorted(records, key=lambda r: r.memory_id)
+
+
 def load_rollback_plan(path: Path) -> RollbackPlan:
     return RollbackPlan.from_dict(_load_json(path))
 
@@ -934,6 +971,7 @@ __all__ = [
     "evaluate_self_evolution_gate",
     "load_drift_cases",
     "load_improvement_candidate",
+    "load_active_memories",
     "load_memory_record",
     "load_rollback_plan",
     "run_drift_checks",

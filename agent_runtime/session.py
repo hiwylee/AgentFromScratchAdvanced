@@ -81,6 +81,7 @@ class SessionContext:
     budget_tracker: BudgetTracker | None = None
     instruction_sources: list[str] = field(default_factory=list)
     redaction_status: str = "clean"  # "clean" | "sanitized"
+    approved_memories: list[Any] = field(default_factory=list)
 
     def add_message(self, message: Message) -> None:
         self.conversation_history.append(message)

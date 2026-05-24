@@ -18,7 +18,7 @@ class ActionModel(Protocol):
     name: str
     version: str
 
-    def choose_action(self, intent: UserIntent) -> Action:
+    def choose_action(self, intent: UserIntent, *, context: dict[str, Any] | None = None) -> Action:
         ...
 
 
@@ -49,7 +49,7 @@ class MockModel:
     name = "mock-intent-planner"
     version = "1"
 
-    def choose_action(self, intent: UserIntent) -> Action:
+    def choose_action(self, intent: UserIntent, *, context: dict[str, Any] | None = None) -> Action:
         if intent.intent_type == "workflow_execution":
             return Action(
                 kind="select_workflow",
@@ -239,12 +239,16 @@ class OpenAIResponsesModel:
         self.transport = transport or _default_openai_transport
         self.baseline_model = baseline_model or MockModel()
 
-    def choose_action(self, intent: UserIntent) -> Action:
-        baseline = self.baseline_model.choose_action(intent)
+    def choose_action(self, intent: UserIntent, *, context: dict[str, Any] | None = None) -> Action:
+        baseline = self.baseline_model.choose_action(intent, context=context)
         allowed_kinds = _allowed_action_kinds(intent, baseline)
+        memory_summary = (context or {}).get("memory_summary") if context else None
+        instructions = _OPENAI_ACTION_INSTRUCTIONS
+        if isinstance(memory_summary, str) and memory_summary:
+            instructions = instructions + f"\n\n## Active Memories\n{memory_summary}"
         payload = {
             "model": self.config.model,
-            "instructions": _OPENAI_ACTION_INSTRUCTIONS,
+            "instructions": instructions,
             "input": json.dumps(
                 {
                     "intent": intent.to_dict(),

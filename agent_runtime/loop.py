@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 from time import monotonic
+from typing import Any
 from uuid import uuid4
 
 from .audit import RunRecord, append_audit
@@ -44,6 +45,7 @@ class AgentResult:
 
     query_plan: dict[str, object] | None = None
     plan_shadow: dict[str, object] | None = None
+    memory_summary: str | None = None
 
     def to_dict(self) -> dict[str, object]:
         result: dict[str, object] = {
@@ -59,6 +61,8 @@ class AgentResult:
             result["query_plan"] = self.query_plan
         if self.plan_shadow is not None:
             result["plan_shadow"] = self.plan_shadow
+        if self.memory_summary is not None:
+            result["memory_summary"] = self.memory_summary
         return result
 
 
@@ -73,6 +77,7 @@ class AgentLoop:
         tool_max_attempts: int = 1,
         run_root: Path = Path(".agent/runs"),
         audit_path: Path = Path(".agent/audit.jsonl"),
+        memory_dir: Path | None = None,
     ) -> None:
         self.model = model or MockModel()
         self.budget = budget or Budget()
@@ -81,6 +86,7 @@ class AgentLoop:
         self.tool_max_attempts = max(1, tool_max_attempts)
         self.run_root = run_root
         self.audit_path = audit_path
+        self._memory_dir = memory_dir
 
     def run(self, user_text: str, cancellation_token: CancellationToken | None = None) -> AgentResult:
         token = cancellation_token or self.cancellation_token
@@ -123,8 +129,24 @@ class AgentLoop:
             state, reason = stopped
             return self._finish_stopped(monitor, intent_data, _control_action(reason), state, reason)
 
+        # Load approved cross-session memories.
+        approved_memories: list[Any] = []
+        if self._memory_dir is not None:
+            from .self_evolution import load_active_memories
+            approved_memories = load_active_memories(self._memory_dir)
+
+        memory_context: dict[str, Any] | None = None
+        if approved_memories:
+            memory_summary = _format_memory_context(approved_memories)
+            memory_context = {"memory_summary": memory_summary}
+            monitor.event(
+                "memory_injected",
+                {"memory_count": len(approved_memories), "memory_ids": [m.memory_id for m in approved_memories]},
+            )
+            self._audit(run_id, "memory_injected", {"memory_count": len(approved_memories)})
+
         try:
-            action = self.model.choose_action(intent)
+            action = self.model.choose_action(intent, context=memory_context)
         except ModelInvocationError as exc:
             action = Action(
                 kind="model_error",
@@ -217,7 +239,15 @@ class AgentLoop:
 
         monitor.finish("completed", {"final_answer": final.to_dict()})
         self._audit(run_id, "run_completed", {"final_answer": final.to_dict()})
-        return self._result(monitor, intent_data, action.to_dict(), final, query_plan=query_plan, plan_shadow=plan_shadow)
+        return self._result(
+            monitor,
+            intent_data,
+            action.to_dict(),
+            final,
+            query_plan=query_plan,
+            plan_shadow=plan_shadow,
+            memory_summary=memory_context["memory_summary"] if memory_context else None,
+        )
 
     def _stop_state(
         self,
@@ -268,6 +298,7 @@ class AgentLoop:
         final: FinalAnswer,
         query_plan: QueryPlanArtifact | None = None,
         plan_shadow: dict[str, object] | None = None,
+        memory_summary: str | None = None,
     ) -> AgentResult:
         return AgentResult(
             run_id=monitor.run_id,
@@ -279,6 +310,7 @@ class AgentLoop:
             audit_path=str(self.audit_path),
             query_plan=query_plan.to_dict() if query_plan is not None else None,
             plan_shadow=plan_shadow,
+            memory_summary=memory_summary,
         )
 
 
@@ -416,6 +448,14 @@ def _supported_tool_arguments(
 
 def _control_action(reason: str) -> Action:
     return Action(kind="final_answer", reason=reason, payload={"runtime_control": reason})
+
+
+def _format_memory_context(memories: list[Any]) -> str:
+    """Format approved MemoryRecord list into a plain-text block for model context."""
+    lines: list[str] = []
+    for mem in memories:
+        lines.append(f"- [{mem.memory_id}] {mem.key}: {mem.value}")
+    return "\n".join(lines)
 
 
 def _control_final_answer(state: RunState, reason: str) -> FinalAnswer:
