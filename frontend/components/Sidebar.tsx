@@ -12,6 +12,7 @@ import {
   Zap,
   Brain,
   Settings2,
+  BookOpenCheck,
 } from "lucide-react";
 
 const navItems = [
@@ -38,6 +39,12 @@ const navItems = [
     label: "Workflow",
     icon: GitBranch,
     description: "State machine runner",
+  },
+  {
+    href: "/tacit",
+    label: "Tacit Knowledge",
+    icon: BookOpenCheck,
+    description: "Verification episodes",
   },
   {
     href: "/schema",

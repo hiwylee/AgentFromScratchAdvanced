@@ -63,8 +63,16 @@ function HumanDecisionGate({
 }) {
   const [actor, setActor] = useState("");
   const [reason, setReason] = useState("");
+  const [reasoning, setReasoning] = useState("");
+  const [confidence, setConfidence] = useState<number>(0.8);
+  const [reasonTags, setReasonTags] = useState("");
+  const [uncertaintyRegions, setUncertaintyRegions] = useState("");
+  const [consultPerson, setConsultPerson] = useState("");
+  const [consultReason, setConsultReason] = useState("");
+  const [consultList, setConsultList] = useState<{ person: string; reason: string }[]>([]);
   const [submitting, setSubmitting] = useState<"approve" | "reject" | "skip" | null>(null);
   const [packetExpanded, setPacketExpanded] = useState(false);
+  const [tacitExpanded, setTacitExpanded] = useState(false);
 
   const packet = humanGate.review_packet;
   const checkpoint = packet?.trusted_checkpoint;
@@ -82,6 +90,11 @@ function HumanDecisionGate({
           decision,
           actor: actor.trim() || undefined,
           reason: reason.trim() || undefined,
+          reasoning: reasoning.trim() || undefined,
+          confidence,
+          reason_tags: reasonTags.split(",").map((t) => t.trim()).filter(Boolean),
+          uncertainty_regions: uncertaintyRegions.split(",").map((t) => t.trim()).filter(Boolean),
+          consultation_trace: consultList,
         }),
       });
       const data: WorkflowResult = await res.json();
@@ -195,6 +208,111 @@ function HumanDecisionGate({
           className="min-h-[60px] resize-none bg-input/40 border-border/40 text-sm placeholder:text-muted-foreground/40"
           disabled={busy}
         />
+      </div>
+
+      {/* Tacit Knowledge section (collapsible) */}
+      <div className="border border-border/30 rounded-lg overflow-hidden">
+        <button
+          type="button"
+          onClick={() => setTacitExpanded((v) => !v)}
+          className="w-full flex items-center gap-2 px-3 py-2 text-xs text-muted-foreground hover:text-foreground hover:bg-secondary/30 transition-colors text-left"
+        >
+          {tacitExpanded ? <ChevronDown className="w-3 h-3" /> : <ChevronRight className="w-3 h-3" />}
+          <span className="font-mono uppercase tracking-wider text-[10px]">Tacit Knowledge</span>
+          <span className="text-[10px] text-muted-foreground/50">— reasoning, confidence, consultation</span>
+        </button>
+        {tacitExpanded && (
+          <div className="px-3 pb-3 space-y-2 border-t border-border/20 pt-2">
+            {/* Reasoning */}
+            <Textarea
+              aria-label="Why you made this decision"
+              value={reasoning}
+              onChange={(e) => setReasoning(e.target.value)}
+              placeholder="Why did you make this decision? (tacit reasoning)"
+              className="min-h-[56px] resize-none bg-input/40 border-border/40 text-xs placeholder:text-muted-foreground/40"
+              disabled={busy}
+            />
+            {/* Confidence slider */}
+            <div className="space-y-1">
+              <div className="flex justify-between text-[10px] text-muted-foreground">
+                <span>Decision confidence</span>
+                <span className="font-mono">{Math.round(confidence * 100)}%</span>
+              </div>
+              <input
+                type="range"
+                min={0} max={1} step={0.05}
+                value={confidence}
+                onChange={(e) => setConfidence(parseFloat(e.target.value))}
+                disabled={busy}
+                className="w-full accent-primary h-1.5"
+              />
+            </div>
+            {/* Reason tags */}
+            <Input
+              aria-label="Reason tags"
+              value={reasonTags}
+              onChange={(e) => setReasonTags(e.target.value)}
+              placeholder="Reason tags (comma-separated): tone mismatch, policy risk…"
+              className="font-mono text-xs bg-input/40 border-border/40 placeholder:text-muted-foreground/40"
+              disabled={busy}
+            />
+            {/* Uncertainty regions */}
+            <Input
+              aria-label="Uncertainty regions"
+              value={uncertaintyRegions}
+              onChange={(e) => setUncertaintyRegions(e.target.value)}
+              placeholder="Uncertain areas (comma-separated): financial terms, legal phrasing…"
+              className="font-mono text-xs bg-input/40 border-border/40 placeholder:text-muted-foreground/40"
+              disabled={busy}
+            />
+            {/* Consultation trace */}
+            <div className="space-y-1">
+              <div className="text-[10px] text-muted-foreground uppercase tracking-wider">Consultation</div>
+              {consultList.map((c, i) => (
+                <div key={i} className="flex items-center gap-1 text-xs text-muted-foreground">
+                  <span className="text-foreground/70 font-mono">{c.person}</span>
+                  <span>—</span>
+                  <span>{c.reason}</span>
+                  <button
+                    type="button"
+                    onClick={() => setConsultList((l) => l.filter((_, j) => j !== i))}
+                    className="ml-auto text-[oklch(0.65_0.22_25)] hover:text-[oklch(0.65_0.22_25)] text-[10px]"
+                  >✕</button>
+                </div>
+              ))}
+              <div className="flex gap-1">
+                <Input
+                  value={consultPerson}
+                  onChange={(e) => setConsultPerson(e.target.value)}
+                  placeholder="Person"
+                  className="font-mono text-xs bg-input/40 border-border/40 h-7 placeholder:text-muted-foreground/40"
+                  disabled={busy}
+                />
+                <Input
+                  value={consultReason}
+                  onChange={(e) => setConsultReason(e.target.value)}
+                  placeholder="Reason for consulting"
+                  className="font-mono text-xs bg-input/40 border-border/40 h-7 placeholder:text-muted-foreground/40 flex-1"
+                  disabled={busy}
+                />
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  className="h-7 text-xs px-2"
+                  disabled={busy || !consultPerson.trim()}
+                  onClick={() => {
+                    if (consultPerson.trim()) {
+                      setConsultList((l) => [...l, { person: consultPerson.trim(), reason: consultReason.trim() }]);
+                      setConsultPerson("");
+                      setConsultReason("");
+                    }
+                  }}
+                >+</Button>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
 
       <div className="flex items-center gap-2 flex-wrap">

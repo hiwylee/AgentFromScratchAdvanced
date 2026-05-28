@@ -315,6 +315,66 @@ export interface StructuredError {
   isKnown: boolean;
 }
 
+// ── Tacit Knowledge ────────────────────────────────────────────────
+export interface CorrectionDiff {
+  removed?: string[];
+  inserted?: string[];
+  tone_change?: string | null;
+  terminology_changes?: string[];
+  semantic_type?: string;
+}
+
+export interface ConsultationEntry {
+  person: string;
+  reason: string;
+}
+
+export interface VerificationEpisode {
+  episode_id: string;
+  timestamp: string;
+  session_id: string;
+  ai_output: string;
+  final_resolution: "human_override" | "human_approved" | "human_rejected" | "escalated";
+  human_revision?: string | null;
+  correction_diff?: CorrectionDiff | null;
+  confidence_before?: number | null;
+  confidence_after?: number | null;
+  uncertainty_regions?: string[];
+  consultation_trace?: ConsultationEntry[];
+  reason_tags?: string[];
+  reflection_summary?: string | null;
+  schema_version?: string;
+}
+
+export interface TacitSignal {
+  episode_id: string;
+  suspected_heuristics: string[];
+  source_tags: string[];
+  source_semantic_type?: string | null;
+}
+
+export interface ReflectionResult {
+  episode_id: string;
+  failure_analysis: string;
+  missing_context: string;
+  extracted_heuristics: string[];
+  policy_proposal: string;
+}
+
+export interface TacitEpisodesResponse {
+  episodes: VerificationEpisode[];
+  error?: string;
+}
+
+export interface TacitHeuristicsResponse {
+  heuristics: string[];
+  error?: string;
+}
+
+export interface TacitReflectResponse extends ReflectionResult {
+  error?: string;
+}
+
 // ── Schema Inspector ───────────────────────────────────────────────
 export interface TableEntry {
   name: string;
