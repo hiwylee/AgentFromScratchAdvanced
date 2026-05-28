@@ -556,5 +556,95 @@ class ContentHashTests(unittest.TestCase):
         self.assertTrue(verify_candidate_hash(loaded))
 
 
+    def test_approve_candidate_creates_review_record(self):
+        from agent_runtime.self_evolution import approve_candidate
+        candidate = build_improvement_candidate(
+            candidate_type="prompt",
+            trigger_type="eval_failure",
+            summary="test",
+            proposed_change="change",
+            affected_artifacts=[ArtifactChange(path="artifacts/p.md", artifact_type="prompt", current_version="1", proposed_version="2")],
+            source_id="test",
+            author="bot",
+        )
+        updated = approve_candidate(candidate, reviewer_id="reviewer1", notes="LGTM")
+        self.assertEqual("approved", updated.review.decision)
+        self.assertEqual("reviewer1", updated.review.reviewer)
+        self.assertEqual(1, len(updated.review_records))
+        self.assertEqual("reviewer1", updated.review_records[0].reviewer_id)
+        self.assertEqual("approved", updated.review_records[0].decision)
+        self.assertEqual(0, updated.review_records[0].sequence_no)
+
+    def test_reject_candidate_creates_review_record(self):
+        from agent_runtime.self_evolution import reject_candidate
+        candidate = build_improvement_candidate(
+            candidate_type="policy",
+            trigger_type="operator_note",
+            summary="test",
+            proposed_change="no",
+            affected_artifacts=[ArtifactChange(path="artifacts/p.json", artifact_type="policy", current_version="1", proposed_version="2")],
+            source_id="test",
+            author="bot",
+        )
+        updated = reject_candidate(candidate, reviewer_id="reviewer2", reason="not ready")
+        self.assertEqual("rejected", updated.review.decision)
+        self.assertEqual(1, len(updated.review_records))
+        self.assertEqual("rejected", updated.review_records[0].decision)
+
+    def test_approve_candidate_requires_reviewer_id(self):
+        from agent_runtime.self_evolution import approve_candidate
+        candidate = build_improvement_candidate(
+            candidate_type="prompt",
+            trigger_type="eval_failure",
+            summary="t",
+            proposed_change="c",
+            affected_artifacts=[ArtifactChange(path="a/b.md", artifact_type="prompt", current_version="1", proposed_version="2")],
+            source_id="s",
+            author="a",
+        )
+        with self.assertRaises(ValueError):
+            approve_candidate(candidate, reviewer_id="")
+
+    def test_rollback_executor_dry_run(self):
+        from agent_runtime.self_evolution import RollbackExecutor, RollbackPlan
+        plan = RollbackPlan.from_dict({
+            "schema_version": "agent-runtime.rollback-plan.v1",
+            "candidate_id": "test-123",
+            "artifacts": [
+                {
+                    "path": "artifacts/prompts/intent.md",
+                    "artifact_type": "prompt",
+                    "version_before": "1",
+                    "version_after": "2",
+                    "rollback_source_path": "artifacts/prompts/intent.md.bak",
+                }
+            ],
+        })
+        executor = RollbackExecutor()
+        result = executor.execute_rollback(plan, dry_run=True)
+        self.assertEqual("dry_run_only", result.status)
+        self.assertEqual(("artifacts/prompts/intent.md",), result.artifact_paths_covered)
+        self.assertTrue(result.dry_run)
+
+    def test_rollback_executor_rejects_live_execution(self):
+        from agent_runtime.self_evolution import RollbackExecutor, RollbackPlan
+        plan = RollbackPlan.from_dict({
+            "schema_version": "agent-runtime.rollback-plan.v1",
+            "candidate_id": "test-456",
+            "artifacts": [
+                {
+                    "path": "artifacts/p.md",
+                    "artifact_type": "prompt",
+                    "version_before": "1",
+                    "version_after": "2",
+                    "rollback_source_path": "artifacts/p.md.bak",
+                }
+            ],
+        })
+        executor = RollbackExecutor()
+        with self.assertRaises(ValueError):
+            executor.execute_rollback(plan, dry_run=False)
+
+
 if __name__ == "__main__":
     unittest.main()

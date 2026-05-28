@@ -248,6 +248,7 @@ class ImprovementCandidateRecord:
     created_at: str = field(default_factory=utc_now)
     review: CandidateReview = field(default_factory=CandidateReview)
     content_hash: str = ""
+    review_records: tuple["ReviewRecord", ...] = field(default_factory=tuple)
 
     @classmethod
     def from_dict(cls, data: Mapping[str, Any]) -> "ImprovementCandidateRecord":
@@ -282,6 +283,11 @@ class ImprovementCandidateRecord:
             created_at=str(data.get("created_at") or utc_now()),
             review=CandidateReview.from_dict(data.get("review") if isinstance(data.get("review"), Mapping) else None),
             content_hash=str(data.get("content_hash") or ""),
+            review_records=tuple(
+                ReviewRecord.from_dict(item, path=f"candidate.review_records[{i}]")
+                for i, item in enumerate(data.get("review_records") or [])
+                if isinstance(item, Mapping)
+            ),
         )
 
     def to_dict(self) -> dict[str, Any]:
@@ -496,6 +502,149 @@ def write_improvement_candidate(
         encoding="utf-8",
     )
     return path
+
+
+def approve_candidate(
+    record: ImprovementCandidateRecord,
+    *,
+    reviewer_id: str,
+    notes: str = "",
+) -> ImprovementCandidateRecord:
+    """Return a new record with review set to approved and a ReviewRecord appended.
+
+    Does not write to disk. Raises ValueError if record is not in pending state.
+    """
+    if not reviewer_id.strip():
+        raise ValueError("reviewer_id must not be empty")
+    if record.review.decision != "pending":
+        raise ValueError(
+            f"only pending candidates can be approved; current decision: {record.review.decision!r}"
+        )
+    timestamp = utc_now()
+    sequence_no = len(record.review_records)
+    new_review_record = ReviewRecord(
+        reviewer_id=reviewer_id.strip(),
+        reviewer_timestamp=timestamp,
+        decision="approved",
+        sequence_no=sequence_no,
+        notes=notes,
+    )
+    new_review = CandidateReview(
+        decision="approved",
+        reviewer=reviewer_id.strip(),
+        reviewed_at=timestamp,
+        notes=notes,
+    )
+    return dataclasses.replace(
+        record,
+        review=new_review,
+        review_records=(*record.review_records, new_review_record),
+    )
+
+
+def reject_candidate(
+    record: ImprovementCandidateRecord,
+    *,
+    reviewer_id: str,
+    reason: str = "",
+) -> ImprovementCandidateRecord:
+    """Return a new record with review set to rejected and a ReviewRecord appended.
+
+    Does not write to disk. Raises ValueError if record is not in pending state.
+    """
+    if not reviewer_id.strip():
+        raise ValueError("reviewer_id must not be empty")
+    if record.review.decision != "pending":
+        raise ValueError(
+            f"only pending candidates can be rejected; current decision: {record.review.decision!r}"
+        )
+    timestamp = utc_now()
+    sequence_no = len(record.review_records)
+    new_review_record = ReviewRecord(
+        reviewer_id=reviewer_id.strip(),
+        reviewer_timestamp=timestamp,
+        decision="rejected",
+        sequence_no=sequence_no,
+        notes=reason,
+    )
+    new_review = CandidateReview(
+        decision="rejected",
+        reviewer=reviewer_id.strip(),
+        reviewed_at=timestamp,
+        notes=reason,
+    )
+    return dataclasses.replace(
+        record,
+        review=new_review,
+        review_records=(*record.review_records, new_review_record),
+    )
+
+
+@dataclass
+class RollbackResult:
+    """Result of a rollback attempt (always dry_run=True for now)."""
+
+    candidate_id: str
+    dry_run: bool
+    artifact_paths_covered: tuple[str, ...]
+    validation_commands: tuple[str, ...]
+    status: str  # "dry_run_only" | "validated" | "blocked"
+    blocking_reasons: tuple[str, ...]
+
+    def to_dict(self) -> dict[str, Any]:
+        return asdict(self)
+
+
+class RollbackExecutor:
+    """Validates and simulates rollback execution for improvement candidates.
+
+    Actual file modification is permanently disabled (execute_rollback always
+    runs as dry_run). Only the validation path is implemented.
+    """
+
+    def validate_rollback_plan(self, plan: RollbackPlan) -> list[str]:
+        """Return list of blocking reasons; empty means valid."""
+        reasons: list[str] = []
+        if not plan.artifacts:
+            reasons.append("rollback plan has no artifacts")
+            return reasons
+        for artifact in plan.artifacts:
+            if not artifact.path:
+                reasons.append("rollback artifact has empty path")
+            if not artifact.version_before:
+                reasons.append(f"rollback artifact {artifact.path!r} missing version_before")
+            if not artifact.version_after:
+                reasons.append(f"rollback artifact {artifact.path!r} missing version_after")
+            if artifact.version_before == artifact.version_after:
+                reasons.append(
+                    f"rollback artifact {artifact.path!r} version_before equals version_after"
+                )
+            if not artifact.rollback_source_path:
+                reasons.append(f"rollback artifact {artifact.path!r} missing rollback_source_path")
+        return reasons
+
+    def execute_rollback(
+        self, plan: RollbackPlan, *, dry_run: bool = True
+    ) -> "RollbackResult":
+        """Simulate rollback execution. Always runs as dry_run — actual file changes are closed.
+
+        Raises ValueError if dry_run=False is requested.
+        """
+        if not dry_run:
+            raise ValueError(
+                "RollbackExecutor.execute_rollback only supports dry_run=True; "
+                "actual rollback execution is not yet implemented"
+            )
+        blocking_reasons = tuple(self.validate_rollback_plan(plan))
+        status = "blocked" if blocking_reasons else "dry_run_only"
+        return RollbackResult(
+            candidate_id=plan.candidate_id,
+            dry_run=True,
+            artifact_paths_covered=tuple(a.path for a in plan.artifacts),
+            validation_commands=plan.validation_commands,
+            status=status,
+            blocking_reasons=blocking_reasons,
+        )
 
 
 def load_memory_record(path: Path) -> MemoryRecord:
@@ -1088,6 +1237,7 @@ __all__ = [
     "RollbackArtifact",
     "RollbackPlan",
     "SelfEvolutionGateReport",
+    "approve_candidate",
     "build_improvement_candidate",
     "compute_candidate_content_hash",
     "evaluate_self_evolution_gate",
@@ -1096,7 +1246,10 @@ __all__ = [
     "load_active_memories",
     "load_memory_record",
     "load_rollback_plan",
+    "reject_candidate",
     "run_drift_checks",
     "verify_candidate_hash",
     "write_improvement_candidate",
+    "RollbackExecutor",
+    "RollbackResult",
 ]

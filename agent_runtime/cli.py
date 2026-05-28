@@ -30,8 +30,10 @@ from .redaction import redact
 from .self_evolution import (
     ArtifactChange,
     CandidateReview,
+    approve_candidate,
     build_improvement_candidate,
     load_improvement_candidate,
+    reject_candidate,
     write_improvement_candidate,
 )
 from .sql_execution import SqlExecutionRequest, SqlclReadOnlyAdapter
@@ -260,6 +262,12 @@ def main(argv: Sequence[str] | None = None) -> int:
     review_parser.add_argument("--candidate-id", default=None, help="candidate id to act on")
     review_parser.add_argument("--reviewer", default=None, help="reviewer name")
     review_parser.add_argument("--notes", default="", help="reviewer notes (for reject)")
+    review_parser.add_argument(
+        "--status",
+        default=None,
+        choices=("proposed", "accepted", "rejected", "superseded"),
+        help="filter candidates by status (list operation only)",
+    )
 
     args = parser.parse_args(argv)
 
@@ -1990,6 +1998,8 @@ def _cmd_review_candidate(args: argparse.Namespace, audit_path: Path) -> int:
         for path in candidate_files:
             try:
                 record = load_improvement_candidate(path)
+                if args.status and record.status != args.status:
+                    continue
                 rows.append({
                     "id": record.candidate_id,
                     "type": record.candidate_type,
@@ -2042,17 +2052,11 @@ def _cmd_review_candidate(args: argparse.Namespace, audit_path: Path) -> int:
         except (ValueError, OSError) as exc:
             print(f"error: could not load candidate: {exc}", file=sys.stderr)
             return 1
-        if record.review.decision != "pending":
-            print(f"error: candidate review decision is '{record.review.decision}', only 'pending' candidates can be approved", file=sys.stderr)
-            return 1
-        new_review = CandidateReview(decision="approved", reviewer=reviewer, reviewed_at=utc_now(), notes=args.notes or "")
-        base = record.to_dict()
-        updated_data = {**base, "review": new_review.to_dict(), "affected_artifacts": list(base["affected_artifacts"])}
         try:
-            updated = type(record).from_dict(updated_data)
+            updated = approve_candidate(record, reviewer_id=reviewer, notes=args.notes or "")
             write_improvement_candidate(updated, path, overwrite=True)
         except (ValueError, OSError, SecretLeakError) as exc:
-            print(f"error: could not write updated candidate: {exc}", file=sys.stderr)
+            print(f"error: could not approve candidate: {exc}", file=sys.stderr)
             return 1
         _append_operator_audit(audit_path, "operator.review_candidate_approved", redact({"candidate_id": record.candidate_id, "reviewer": reviewer, "status": "approved"}))
         print(json.dumps(redact({"state": "approved", "candidate_id": record.candidate_id, "reviewer": reviewer}), ensure_ascii=False, indent=2))
@@ -2075,17 +2079,11 @@ def _cmd_review_candidate(args: argparse.Namespace, audit_path: Path) -> int:
         except (ValueError, OSError) as exc:
             print(f"error: could not load candidate: {exc}", file=sys.stderr)
             return 1
-        if record.review.decision != "pending":
-            print(f"error: candidate review decision is '{record.review.decision}', only 'pending' candidates can be rejected", file=sys.stderr)
-            return 1
-        new_review = CandidateReview(decision="rejected", reviewer=reviewer, reviewed_at=utc_now(), notes=args.notes or "")
-        base = record.to_dict()
-        updated_data = {**base, "review": new_review.to_dict(), "affected_artifacts": list(base["affected_artifacts"])}
         try:
-            updated = type(record).from_dict(updated_data)
+            updated = reject_candidate(record, reviewer_id=reviewer, reason=args.notes or "")
             write_improvement_candidate(updated, path, overwrite=True)
         except (ValueError, OSError, SecretLeakError) as exc:
-            print(f"error: could not write updated candidate: {exc}", file=sys.stderr)
+            print(f"error: could not reject candidate: {exc}", file=sys.stderr)
             return 1
         _append_operator_audit(audit_path, "operator.review_candidate_rejected", redact({"candidate_id": record.candidate_id, "reviewer": reviewer, "status": "rejected", "notes": args.notes or ""}))
         print(json.dumps(redact({"state": "rejected", "candidate_id": record.candidate_id, "reviewer": reviewer}), ensure_ascii=False, indent=2))
