@@ -387,6 +387,9 @@ def _minimal_sqlcl_execution_env() -> dict[str, str]:
         value = os.environ.get(key)
         if value:
             env[key] = value
+    # SQLcl 25.4.x ships JLine which uses reflection on final fields in Java 21+.
+    # Without this flag the JVM blocks the access and SQLcl exits with code 2.
+    env["_JAVA_OPTIONS"] = "--enable-final-field-mutation=ALL-UNNAMED"
     return env
 
 

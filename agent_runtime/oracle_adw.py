@@ -971,6 +971,8 @@ def _minimal_sqlcl_version_env() -> dict[str, str]:
         value = os.environ.get(key)
         if value:
             env[key] = value
+    # SQLcl 25.4.x + Java 21 requires this flag for JLine reflection access.
+    env["_JAVA_OPTIONS"] = "--enable-final-field-mutation=ALL-UNNAMED"
     return env
 
 
