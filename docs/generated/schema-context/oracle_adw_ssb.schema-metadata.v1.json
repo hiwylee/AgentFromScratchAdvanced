@@ -1,0 +1,135 @@
+{
+  "schema_version": "agent-runtime.schema-metadata.v1",
+  "profile_id": "oracle_adw_ssb.v1",
+  "source": {
+    "database": "oracle_adw",
+    "introspected_as": "documented",
+    "introspection_mode": "documented",
+    "captured_at": "2026-05-29T00:00:00Z"
+  },
+  "tables": [
+    {
+      "table_id": "SSB.LINEORDER",
+      "owner": "SSB",
+      "name": "LINEORDER",
+      "kind": "table",
+      "role": "fact",
+      "description": "Order line fact table for revenue, quantity, discount, and supply chain analysis.",
+      "synonyms": ["LINEORDER", "ORDERS", "ORDER_LINES", "REVENUE"],
+      "curated_priority": "primary",
+      "row_count_estimate": null,
+      "columns": [
+        {"name": "LO_ORDERKEY", "data_type": "NUMBER", "nullable": false, "semantic_type": "primary_key", "business_terms": ["order", "order key"], "description": "Order key.", "sample_policy": "never"},
+        {"name": "LO_LINENUMBER", "data_type": "NUMBER", "nullable": false, "semantic_type": "sequence", "business_terms": ["line number"], "description": "Line number within order.", "sample_policy": "never"},
+        {"name": "LO_CUSTKEY", "data_type": "NUMBER", "nullable": false, "semantic_type": "foreign_key", "business_terms": ["customer"], "description": "Customer dimension key.", "sample_policy": "never"},
+        {"name": "LO_PARTKEY", "data_type": "NUMBER", "nullable": false, "semantic_type": "foreign_key", "business_terms": ["part", "product"], "description": "Part dimension key.", "sample_policy": "never"},
+        {"name": "LO_SUPPKEY", "data_type": "NUMBER", "nullable": false, "semantic_type": "foreign_key", "business_terms": ["supplier"], "description": "Supplier dimension key.", "sample_policy": "never"},
+        {"name": "LO_ORDERDATE", "data_type": "NUMBER", "nullable": false, "semantic_type": "date_key", "business_terms": ["date", "order date", "month", "year"], "description": "Order date key (YYYYMMDD integer, joins to DWDATE.D_DATEKEY).", "sample_policy": "never"},
+        {"name": "LO_ORDERPRIORITY", "data_type": "VARCHAR2", "nullable": true, "semantic_type": "category", "business_terms": ["priority", "order priority"], "description": "Order priority.", "sample_policy": "masked"},
+        {"name": "LO_SHIPPRIORITY", "data_type": "NUMBER", "nullable": true, "semantic_type": "category", "business_terms": ["ship priority"], "description": "Ship priority.", "sample_policy": "masked"},
+        {"name": "LO_QUANTITY", "data_type": "NUMBER", "nullable": false, "semantic_type": "measure", "business_terms": ["quantity", "units"], "description": "Ordered quantity.", "sample_policy": "never"},
+        {"name": "LO_EXTENDEDPRICE", "data_type": "NUMBER", "nullable": false, "semantic_type": "measure", "business_terms": ["extended price", "revenue"], "description": "Extended line price before discount.", "sample_policy": "never"},
+        {"name": "LO_ORDTOTALPRICE", "data_type": "NUMBER", "nullable": true, "semantic_type": "measure", "business_terms": ["total price", "order total"], "description": "Total order price.", "sample_policy": "never"},
+        {"name": "LO_DISCOUNT", "data_type": "NUMBER", "nullable": false, "semantic_type": "measure", "business_terms": ["discount"], "description": "Discount percentage.", "sample_policy": "never"},
+        {"name": "LO_REVENUE", "data_type": "NUMBER", "nullable": false, "semantic_type": "measure", "business_terms": ["revenue", "net revenue"], "description": "Revenue after discount (LO_EXTENDEDPRICE * (1 - LO_DISCOUNT/100)).", "sample_policy": "never"},
+        {"name": "LO_SUPPLYCOST", "data_type": "NUMBER", "nullable": false, "semantic_type": "measure", "business_terms": ["supply cost", "cost"], "description": "Supply cost.", "sample_policy": "never"},
+        {"name": "LO_TAX", "data_type": "NUMBER", "nullable": false, "semantic_type": "measure", "business_terms": ["tax"], "description": "Tax.", "sample_policy": "never"},
+        {"name": "LO_COMMITDATE", "data_type": "NUMBER", "nullable": true, "semantic_type": "date_key", "business_terms": ["commit date"], "description": "Committed delivery date key.", "sample_policy": "never"},
+        {"name": "LO_SHIPMODE", "data_type": "VARCHAR2", "nullable": true, "semantic_type": "category", "business_terms": ["ship mode", "shipping"], "description": "Shipping mode.", "sample_policy": "masked"}
+      ]
+    },
+    {
+      "table_id": "SSB.CUSTOMER",
+      "owner": "SSB",
+      "name": "CUSTOMER",
+      "kind": "table",
+      "role": "dimension",
+      "description": "Customer dimension with geography, market segment, and demographics.",
+      "synonyms": ["CUSTOMER", "CUSTOMERS", "BUYER"],
+      "curated_priority": "primary",
+      "row_count_estimate": null,
+      "columns": [
+        {"name": "C_CUSTKEY", "data_type": "NUMBER", "nullable": false, "semantic_type": "primary_key", "business_terms": ["customer key"], "description": "Customer primary key.", "sample_policy": "never"},
+        {"name": "C_NAME", "data_type": "VARCHAR2", "nullable": false, "semantic_type": "identifier", "business_terms": ["customer name"], "description": "Customer name.", "sample_policy": "masked"},
+        {"name": "C_ADDRESS", "data_type": "VARCHAR2", "nullable": true, "semantic_type": "pii", "business_terms": ["address"], "description": "Customer address.", "sample_policy": "never"},
+        {"name": "C_CITY", "data_type": "VARCHAR2", "nullable": true, "semantic_type": "geography", "business_terms": ["city", "customer city"], "description": "Customer city.", "sample_policy": "masked"},
+        {"name": "C_NATION", "data_type": "VARCHAR2", "nullable": true, "semantic_type": "geography", "business_terms": ["nation", "country"], "description": "Customer nation.", "sample_policy": "masked"},
+        {"name": "C_REGION", "data_type": "VARCHAR2", "nullable": true, "semantic_type": "geography", "business_terms": ["region", "customer region"], "description": "Customer region.", "sample_policy": "masked"},
+        {"name": "C_PHONE", "data_type": "VARCHAR2", "nullable": true, "semantic_type": "pii", "business_terms": ["phone"], "description": "Customer phone.", "sample_policy": "never"},
+        {"name": "C_MKTSEGMENT", "data_type": "VARCHAR2", "nullable": true, "semantic_type": "category", "business_terms": ["market segment", "segment"], "description": "Market segment.", "sample_policy": "masked"}
+      ]
+    },
+    {
+      "table_id": "SSB.PART",
+      "owner": "SSB",
+      "name": "PART",
+      "kind": "table",
+      "role": "dimension",
+      "description": "Part/product dimension with category, brand, and type hierarchy.",
+      "synonyms": ["PART", "PARTS", "PRODUCT", "PRODUCTS", "ITEM"],
+      "curated_priority": "primary",
+      "row_count_estimate": null,
+      "columns": [
+        {"name": "P_PARTKEY", "data_type": "NUMBER", "nullable": false, "semantic_type": "primary_key", "business_terms": ["part key", "product key"], "description": "Part primary key.", "sample_policy": "never"},
+        {"name": "P_NAME", "data_type": "VARCHAR2", "nullable": false, "semantic_type": "identifier", "business_terms": ["part name", "product name"], "description": "Part name.", "sample_policy": "masked"},
+        {"name": "P_MFGR", "data_type": "VARCHAR2", "nullable": true, "semantic_type": "category", "business_terms": ["manufacturer", "mfgr"], "description": "Manufacturer.", "sample_policy": "masked"},
+        {"name": "P_CATEGORY", "data_type": "VARCHAR2", "nullable": true, "semantic_type": "category", "business_terms": ["category", "part category", "product category"], "description": "Part category.", "sample_policy": "masked"},
+        {"name": "P_BRAND1", "data_type": "VARCHAR2", "nullable": true, "semantic_type": "category", "business_terms": ["brand", "brand1"], "description": "Brand.", "sample_policy": "masked"},
+        {"name": "P_COLOR", "data_type": "VARCHAR2", "nullable": true, "semantic_type": "category", "business_terms": ["color"], "description": "Part color.", "sample_policy": "masked"},
+        {"name": "P_TYPE", "data_type": "VARCHAR2", "nullable": true, "semantic_type": "category", "business_terms": ["type", "part type"], "description": "Part type.", "sample_policy": "masked"},
+        {"name": "P_SIZE", "data_type": "NUMBER", "nullable": true, "semantic_type": "measure", "business_terms": ["size"], "description": "Part size.", "sample_policy": "never"},
+        {"name": "P_CONTAINER", "data_type": "VARCHAR2", "nullable": true, "semantic_type": "category", "business_terms": ["container"], "description": "Container type.", "sample_policy": "masked"}
+      ]
+    },
+    {
+      "table_id": "SSB.SUPPLIER",
+      "owner": "SSB",
+      "name": "SUPPLIER",
+      "kind": "table",
+      "role": "dimension",
+      "description": "Supplier dimension with geography and nation.",
+      "synonyms": ["SUPPLIER", "SUPPLIERS", "VENDOR"],
+      "curated_priority": "primary",
+      "row_count_estimate": null,
+      "columns": [
+        {"name": "S_SUPPKEY", "data_type": "NUMBER", "nullable": false, "semantic_type": "primary_key", "business_terms": ["supplier key"], "description": "Supplier primary key.", "sample_policy": "never"},
+        {"name": "S_NAME", "data_type": "VARCHAR2", "nullable": false, "semantic_type": "identifier", "business_terms": ["supplier name"], "description": "Supplier name.", "sample_policy": "masked"},
+        {"name": "S_ADDRESS", "data_type": "VARCHAR2", "nullable": true, "semantic_type": "pii", "business_terms": ["address"], "description": "Supplier address.", "sample_policy": "never"},
+        {"name": "S_CITY", "data_type": "VARCHAR2", "nullable": true, "semantic_type": "geography", "business_terms": ["city", "supplier city"], "description": "Supplier city.", "sample_policy": "masked"},
+        {"name": "S_NATION", "data_type": "VARCHAR2", "nullable": true, "semantic_type": "geography", "business_terms": ["nation", "country"], "description": "Supplier nation.", "sample_policy": "masked"},
+        {"name": "S_REGION", "data_type": "VARCHAR2", "nullable": true, "semantic_type": "geography", "business_terms": ["region", "supplier region"], "description": "Supplier region.", "sample_policy": "masked"},
+        {"name": "S_PHONE", "data_type": "VARCHAR2", "nullable": true, "semantic_type": "pii", "business_terms": ["phone"], "description": "Supplier phone.", "sample_policy": "never"}
+      ]
+    },
+    {
+      "table_id": "SSB.DWDATE",
+      "owner": "SSB",
+      "name": "DWDATE",
+      "kind": "table",
+      "role": "dimension",
+      "description": "Date dimension with year, month, quarter, week, and day attributes.",
+      "synonyms": ["DWDATE", "DATE", "TIME", "CALENDAR"],
+      "curated_priority": "primary",
+      "row_count_estimate": null,
+      "columns": [
+        {"name": "D_DATEKEY", "data_type": "NUMBER", "nullable": false, "semantic_type": "primary_key", "business_terms": ["date key", "date"], "description": "Date key (YYYYMMDD integer).", "sample_policy": "never"},
+        {"name": "D_DATE", "data_type": "VARCHAR2", "nullable": false, "semantic_type": "date", "business_terms": ["date", "calendar date"], "description": "Full date string.", "sample_policy": "never"},
+        {"name": "D_DAYOFWEEK", "data_type": "VARCHAR2", "nullable": true, "semantic_type": "category", "business_terms": ["day of week"], "description": "Day of week name.", "sample_policy": "never"},
+        {"name": "D_MONTH", "data_type": "VARCHAR2", "nullable": true, "semantic_type": "category", "business_terms": ["month", "month name"], "description": "Month name.", "sample_policy": "never"},
+        {"name": "D_YEAR", "data_type": "NUMBER", "nullable": true, "semantic_type": "time_part", "business_terms": ["year"], "description": "Year number.", "sample_policy": "never"},
+        {"name": "D_YEARMONTHNUM", "data_type": "NUMBER", "nullable": true, "semantic_type": "time_part", "business_terms": ["year month", "yyyymm"], "description": "Year-month as YYYYMM integer.", "sample_policy": "never"},
+        {"name": "D_YEARMONTH", "data_type": "VARCHAR2", "nullable": true, "semantic_type": "time_part", "business_terms": ["year month", "month year"], "description": "Year-month string.", "sample_policy": "never"},
+        {"name": "D_DAYNUMINWEEK", "data_type": "NUMBER", "nullable": true, "semantic_type": "time_part", "business_terms": ["day in week"], "description": "Day number within week.", "sample_policy": "never"},
+        {"name": "D_DAYNUMINMONTH", "data_type": "NUMBER", "nullable": true, "semantic_type": "time_part", "business_terms": ["day in month"], "description": "Day number within month.", "sample_policy": "never"},
+        {"name": "D_DAYNUMINYEAR", "data_type": "NUMBER", "nullable": true, "semantic_type": "time_part", "business_terms": ["day in year"], "description": "Day number within year.", "sample_policy": "never"},
+        {"name": "D_MONTHNUMINYEAR", "data_type": "NUMBER", "nullable": true, "semantic_type": "time_part", "business_terms": ["month number", "month"], "description": "Month number within year (1-12).", "sample_policy": "never"},
+        {"name": "D_WEEKNUMINYEAR", "data_type": "NUMBER", "nullable": true, "semantic_type": "time_part", "business_terms": ["week", "week number"], "description": "Week number within year.", "sample_policy": "never"},
+        {"name": "D_SELLINGSEASON", "data_type": "VARCHAR2", "nullable": true, "semantic_type": "category", "business_terms": ["season", "selling season"], "description": "Selling season.", "sample_policy": "never"},
+        {"name": "D_LASTDAYINWEEKFL", "data_type": "NUMBER", "nullable": true, "semantic_type": "flag", "business_terms": [], "description": "Last day in week flag.", "sample_policy": "never"},
+        {"name": "D_LASTDAYINMONTHFL", "data_type": "NUMBER", "nullable": true, "semantic_type": "flag", "business_terms": [], "description": "Last day in month flag.", "sample_policy": "never"},
+        {"name": "D_HOLIDAYFL", "data_type": "NUMBER", "nullable": true, "semantic_type": "flag", "business_terms": ["holiday"], "description": "Holiday flag.", "sample_policy": "never"},
+        {"name": "D_WEEKDAYFL", "data_type": "NUMBER", "nullable": true, "semantic_type": "flag", "business_terms": ["weekday"], "description": "Weekday flag.", "sample_policy": "never"}
+      ]
+    }
+  ]
+}

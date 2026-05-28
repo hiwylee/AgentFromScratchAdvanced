@@ -46,6 +46,14 @@
       "seed_path": "docs/generated/schema-context/oracle_adw_sh.curated-seed.v1.json",
       "required_tables": ["CHANNELS", "CUSTOMERS", "PRODUCTS", "SALES", "TIMES"],
       "grant_profile": "production-sh-read"
+    },
+    "oracle_adw_ssb.v1": {
+      "profile_id": "oracle_adw_ssb.v1",
+      "schema_owner": "SSB",
+      "metadata_path": "docs/generated/schema-context/oracle_adw_ssb.schema-metadata.v1.json",
+      "seed_path": "docs/generated/schema-context/oracle_adw_ssb.curated-seed.v1.json",
+      "required_tables": ["CUSTOMER", "DWDATE", "LINEORDER", "PART", "SUPPLIER"],
+      "grant_profile": "production-sh-read"
     }
   }
 }

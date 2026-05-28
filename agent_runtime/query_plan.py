@@ -16,6 +16,13 @@ QUERY_PLAN_SCHEMA_VERSION = "agent-runtime.query-plan.v1"
 
 QueryPlanStatus = Literal["planned", "clarification_required", "blocked"]
 
+_SH_PROFILE_PREFIX = "oracle_adw_sh"
+
+QUERY_PATTERN_REGISTRY: dict[str, bool] = {
+    "oracle_adw_sh.v1": True,
+    # oracle_adw_ssb.v1: no patterns implemented yet
+}
+
 
 @dataclass(frozen=True)
 class QueryPlanArtifact:
@@ -49,6 +56,23 @@ def build_query_plan_from_context(
     analysis patterns only. Broader NL-to-SQL generation should add plan
     candidates behind this artifact shape rather than bypassing it.
     """
+
+    if compact_context.profile_id not in QUERY_PATTERN_REGISTRY:
+        return QueryPlanArtifact(
+            schema_version=QUERY_PLAN_SCHEMA_VERSION,
+            profile_id=compact_context.profile_id,
+            status="blocked",
+            request_text=request_text,
+            selected_table_ids=tuple(compact_context.selected_table_ids),
+            proposed_sql=None,
+            policy_validation=_not_evaluated_policy("unsupported_schema_profile"),
+            assumptions=(
+                f"Schema profile {compact_context.profile_id!r} does not have registered query patterns.",
+            ),
+            schema_context=_schema_context_refs(compact_context),
+            execution=_closed_execution_boundary(),
+            refusal_reason="unsupported_schema_profile",
+        )
 
     context_refs = _schema_context_refs(compact_context)
     execution = _closed_execution_boundary()
@@ -564,6 +588,7 @@ def _not_evaluated_policy(reason: str) -> dict[str, Any]:
 
 __all__ = [
     "QUERY_PLAN_SCHEMA_VERSION",
+    "QUERY_PATTERN_REGISTRY",
     "QueryPlanArtifact",
     "build_query_plan_from_context",
     "validate_query_plan_sql",

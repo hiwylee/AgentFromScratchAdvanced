@@ -166,6 +166,40 @@ class CandidateReview:
         return redact(asdict(self))
 
 
+@dataclass(frozen=True)
+class ReviewRecord:
+    """Immutable record of a single review action on an improvement candidate."""
+
+    reviewer_id: str
+    reviewer_timestamp: str
+    decision: ReviewDecision
+    sequence_no: int
+    notes: str = ""
+
+    @classmethod
+    def from_dict(cls, data: Mapping[str, Any], *, path: str = "review_record") -> "ReviewRecord":
+        reviewer_id = _required_str(data, "reviewer_id", path)
+        if not reviewer_id.strip():
+            raise ValueError(f"{path}.reviewer_id must not be empty")
+        reviewer_timestamp = _required_str(data, "reviewer_timestamp", path)
+        decision = _one_of(
+            data.get("decision"),
+            {"pending", "approved", "changes_requested", "rejected"},
+            f"{path}.decision",
+        )
+        sequence_no = int(data.get("sequence_no", 0))
+        return cls(
+            reviewer_id=reviewer_id.strip(),
+            reviewer_timestamp=reviewer_timestamp,
+            decision=decision,
+            sequence_no=sequence_no,
+            notes=str(data.get("notes") or ""),
+        )
+
+    def to_dict(self) -> dict[str, Any]:
+        return asdict(self)
+
+
 def compute_candidate_content_hash(
     candidate_id: str,
     candidate_type: str,
@@ -521,6 +555,26 @@ def evaluate_self_evolution_gate(
         reasons.append("candidate must be proposed before the acceptance gate runs")
     if candidate.review.decision != "approved":
         reasons.append("candidate review decision must be approved")
+
+    # Verify content hash has not been tampered with
+    if candidate.content_hash:
+        expected_hash = compute_candidate_content_hash(
+            candidate_id=candidate.candidate_id,
+            candidate_type=candidate.candidate_type,
+            summary=candidate.summary,
+            proposed_change=candidate.proposed_change,
+            affected_artifacts=candidate.affected_artifacts,
+            trigger_type=candidate.trigger_type,
+        )
+        if candidate.content_hash != expected_hash:
+            reasons.append("candidate content_hash does not match recomputed hash — possible tampering")
+    else:
+        reasons.append("candidate content_hash is missing — hash must be set before gate evaluation")
+
+    # Verify reviewer identity for approved review
+    if candidate.review.decision == "approved" and not (candidate.review.reviewer or "").strip():
+        reasons.append("approved candidate review must have a non-empty reviewer identity")
+
     if candidate.provenance.review_status != "approved":
         reasons.append("candidate provenance review_status must be approved")
     if not eval_result.case_results:
@@ -1024,6 +1078,7 @@ __all__ = [
     "SELF_EVOLUTION_GATE_SCHEMA_VERSION",
     "ArtifactChange",
     "CandidateReview",
+    "ReviewRecord",
     "DriftCase",
     "DriftCaseResult",
     "DriftCheckResult",

@@ -1,0 +1,74 @@
+{
+  "schema_version": "agent-runtime.curated-schema-seed.v1",
+  "profile_id": "oracle_adw_ssb.v1",
+  "source": {
+    "author": "project",
+    "updated_at": "2026-05-29T00:00:00Z",
+    "evidence": "SSB Star Schema Benchmark documented schema"
+  },
+  "tables": [
+    {
+      "table_id": "SSB.LINEORDER",
+      "role": "fact",
+      "priority": "primary",
+      "aliases": ["lineorder", "orders", "order lines", "revenue", "sales"],
+      "default_measures": ["LO_REVENUE", "LO_EXTENDEDPRICE", "LO_QUANTITY", "LO_DISCOUNT"],
+      "default_time_columns": ["LO_ORDERDATE"],
+      "common_joins": ["SSB.CUSTOMER", "SSB.PART", "SSB.SUPPLIER", "SSB.DWDATE"],
+      "notes": "Primary fact table. Join LO_ORDERDATE to DWDATE.D_DATEKEY for time dimensions. LO_REVENUE = LO_EXTENDEDPRICE * (1 - LO_DISCOUNT/100)."
+    },
+    {
+      "table_id": "SSB.CUSTOMER",
+      "role": "dimension",
+      "priority": "primary",
+      "aliases": ["customer", "customers", "buyer", "buyers"],
+      "default_dimensions": ["C_NATION", "C_REGION", "C_CITY", "C_MKTSEGMENT"],
+      "common_joins": ["SSB.LINEORDER"],
+      "notes": "Use for customer geography (city, nation, region) and market segment analysis. Avoid personal identifiers (C_NAME, C_ADDRESS, C_PHONE)."
+    },
+    {
+      "table_id": "SSB.PART",
+      "role": "dimension",
+      "priority": "primary",
+      "aliases": ["part", "parts", "product", "products", "item", "items"],
+      "default_dimensions": ["P_CATEGORY", "P_BRAND1", "P_MFGR", "P_TYPE"],
+      "common_joins": ["SSB.LINEORDER"],
+      "notes": "Use for product/part category, brand, and manufacturer analysis."
+    },
+    {
+      "table_id": "SSB.SUPPLIER",
+      "role": "dimension",
+      "priority": "primary",
+      "aliases": ["supplier", "suppliers", "vendor", "vendors"],
+      "default_dimensions": ["S_NATION", "S_REGION", "S_CITY"],
+      "common_joins": ["SSB.LINEORDER"],
+      "notes": "Use for supplier geography and supply chain analysis."
+    },
+    {
+      "table_id": "SSB.DWDATE",
+      "role": "dimension",
+      "priority": "primary",
+      "aliases": ["dwdate", "date", "time", "calendar", "month", "year", "quarter"],
+      "default_dimensions": ["D_YEAR", "D_MONTH", "D_YEARMONTH", "D_YEARMONTHNUM"],
+      "common_joins": ["SSB.LINEORDER"],
+      "notes": "Join to LINEORDER via DWDATE.D_DATEKEY = LINEORDER.LO_ORDERDATE. Use D_YEAR, D_MONTH for time-series aggregation."
+    }
+  ],
+  "glossary": [
+    {"term": "revenue", "aliases": ["매출", "sales", "net revenue"], "maps_to": ["SSB.LINEORDER.LO_REVENUE"], "notes": "LO_REVENUE is after discount. Use LO_EXTENDEDPRICE for gross."},
+    {"term": "quantity", "aliases": ["수량", "units", "qty"], "maps_to": ["SSB.LINEORDER.LO_QUANTITY"]},
+    {"term": "discount", "aliases": ["할인", "discount rate"], "maps_to": ["SSB.LINEORDER.LO_DISCOUNT"]},
+    {"term": "month", "aliases": ["월", "monthly", "calendar month"], "maps_to": ["SSB.DWDATE.D_MONTH", "SSB.DWDATE.D_MONTHNUMINYEAR"]},
+    {"term": "year", "aliases": ["연도", "yearly", "annual"], "maps_to": ["SSB.DWDATE.D_YEAR"]},
+    {"term": "product category", "aliases": ["상품분류", "category"], "maps_to": ["SSB.PART.P_CATEGORY"]},
+    {"term": "brand", "aliases": ["브랜드"], "maps_to": ["SSB.PART.P_BRAND1"]},
+    {"term": "region", "aliases": ["지역"], "maps_to": ["SSB.CUSTOMER.C_REGION", "SSB.SUPPLIER.S_REGION"]},
+    {"term": "market segment", "aliases": ["시장구분", "segment"], "maps_to": ["SSB.CUSTOMER.C_MKTSEGMENT"]}
+  ],
+  "masking_policy": {
+    "schema_version": "agent-runtime.sample-masking.v1",
+    "default_policy": "never",
+    "allowlist": [],
+    "notes": "SSB is a benchmark schema. No real personal data; masking is precautionary."
+  }
+}

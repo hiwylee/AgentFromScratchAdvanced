@@ -379,6 +379,7 @@ def _candidate_payload():
             "review_status": "approved",
         },
         "risk_level": "medium",
+        "content_hash": "b5361626a3bba8db65755822ad642db61b92e3bf2a950c2b0473815f48b51ca0",
         "review": {
             "decision": "approved",
             "reviewer": "expert-review",

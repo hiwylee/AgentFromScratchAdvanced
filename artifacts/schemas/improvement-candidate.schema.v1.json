@@ -69,6 +69,13 @@
     "content_hash": {
       "type": "string",
       "description": "SHA-256 hex digest of canonical candidate content."
+    },
+    "review_records": {
+      "type": "array",
+      "description": "Ordered list of review actions taken on this candidate.",
+      "items": {
+        "$ref": "#/$defs/ReviewRecord"
+      }
     }
   },
   "$defs": {
@@ -147,6 +154,33 @@
         },
         "reviewed_at": {
           "type": ["string", "null"]
+        },
+        "notes": {
+          "type": "string"
+        }
+      }
+    },
+    "ReviewRecord": {
+      "type": "object",
+      "required": ["reviewer_id", "reviewer_timestamp", "decision", "sequence_no"],
+      "additionalProperties": false,
+      "properties": {
+        "reviewer_id": {
+          "type": "string",
+          "description": "Identity of the reviewer."
+        },
+        "reviewer_timestamp": {
+          "type": "string",
+          "description": "ISO 8601 datetime when this review action was taken."
+        },
+        "decision": {
+          "type": "string",
+          "enum": ["pending", "approved", "changes_requested", "rejected"]
+        },
+        "sequence_no": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Monotonically increasing sequence number for ordering review actions."
         },
         "notes": {
           "type": "string"
