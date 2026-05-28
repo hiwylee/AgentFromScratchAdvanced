@@ -5,6 +5,37 @@ direction and implementation changes, not every tiny edit.
 
 ## 2026-05-29
 
+- **Phase 5 (CP5) — Milestone 8: real ADW query tool**: `adw_query` ToolSpec
+  with `risk_level="high"`, `read_only=True` registered in `default_tool_registry()`.
+  `_handle_adw_query` handler validates SQL policy → loads `OracleAdwConfig` →
+  runs `SqlclReadOnlyAdapter(allow_real_execution=True)` → returns bounded rows.
+  `AgentLoop` gains `allow_real_query: bool = False`; when `True` and a planned
+  query plan exists, a second `adw_query` tool call fires with
+  `approved_high_risk_tools=("adw_query",)`. CLI `--allow-real-query` operator flag
+  threads through `_ask()`. 6 new tests; 555 tests / 109 subtests pass.
+
+- **Phase 4 (CP4) — M7 rollback design + review CLI**: `ImprovementCandidateRecord`
+  gains immutable `review_records: tuple[ReviewRecord, ...]` audit trail.
+  `approve_candidate()` / `reject_candidate()` pure functions append `ReviewRecord`
+  and update `CandidateReview` atomically. `RollbackExecutor` class with
+  `validate_rollback_plan()` and `execute_rollback(dry_run=True)` (live execution
+  permanently closed). `review-candidate list --status` filter; approve/reject
+  delegate to new functions. 5 new tests.
+
+- **Phase 3 (CP3) — SSB artifacts + QUERY_PATTERN_REGISTRY + M7 hash tamper
+  detection**: SSB Star Schema Benchmark artifacts created
+  (`oracle_adw_ssb.schema-metadata.v1.json`, `oracle_adw_ssb.curated-seed.v1.json`).
+  `artifact-manifest.v1.json` gains `oracle_adw_ssb.v1` profile.
+  `QUERY_PATTERN_REGISTRY` in `query_plan.py` blocks unknown schema profiles with
+  `unsupported_schema_profile`. `ReviewRecord` dataclass added to `self_evolution.py`.
+  `evaluate_self_evolution_gate()` re-computes SHA-256 and blocks on hash mismatch.
+
+- **Phase 2 (CP2) — Schema Registry infrastructure**: Hardcoded `oracle_adw_sh`
+  file paths replaced with `artifact-manifest.v1.json` registry lookup.
+  `SchemaProfileConfig` dataclass + `load_schema_profile_from_manifest()` in
+  `schema_context.py`. `tools.py` and `loop.py` use `_load_schema_profile()`.
+  `SCHEMA_REQUIRED_TABLES` dict in `oracle_adw.py`.
+
 - **Phase 1 (CP1) — Production DB permission hardening**: Added `production-sh-read`
   grant profile to `adw-provision-working-user`. The new profile grants only
   `CREATE SESSION` (system) + `GRANT SELECT ON SH.{table}` for the five core SH
