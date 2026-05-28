@@ -13,6 +13,47 @@ SCHEMA_METADATA_VERSION = "agent-runtime.schema-metadata.v1"
 CURATED_SEED_VERSION = "agent-runtime.curated-schema-seed.v1"
 MASKING_POLICY_VERSION = "agent-runtime.sample-masking.v1"
 
+
+class SchemaContextError(ValueError):
+    """Raised when schema metadata and curated seed artifacts are invalid."""
+
+
+@dataclass(frozen=True)
+class SchemaProfileConfig:
+    profile_id: str
+    schema_owner: str
+    metadata_path: Path
+    seed_path: Path
+    required_tables: frozenset[str]
+    grant_profile: str
+
+
+def load_schema_profile_from_manifest(
+    profile_id: str,
+    manifest_path: Path,
+    *,
+    project_root: Path | None = None,
+) -> SchemaProfileConfig:
+    """Load a schema profile config from artifact-manifest.v1.json."""
+    with manifest_path.open(encoding="utf-8") as f:
+        manifest = json.load(f)
+    profiles = manifest.get("schema_profiles", {})
+    if profile_id not in profiles:
+        raise SchemaContextError(
+            f"Schema profile {profile_id!r} not found in manifest {manifest_path}"
+        )
+    entry = profiles[profile_id]
+    base = project_root if project_root is not None else manifest_path.parent.parent
+    return SchemaProfileConfig(
+        profile_id=str(entry["profile_id"]),
+        schema_owner=str(entry["schema_owner"]),
+        metadata_path=base / entry["metadata_path"],
+        seed_path=base / entry["seed_path"],
+        required_tables=frozenset(str(t) for t in entry["required_tables"]),
+        grant_profile=str(entry["grant_profile"]),
+    )
+
+
 SENSITIVE_COLUMN_TOKENS = (
     "name",
     "email",
@@ -27,10 +68,6 @@ SENSITIVE_COLUMN_TOKENS = (
 )
 
 IDENTIFIER_TOKENS = ("id", "identifier", "guid", "uuid", "key", "code")
-
-
-class SchemaContextError(ValueError):
-    """Raised when schema metadata and curated seed artifacts are invalid."""
 
 
 @dataclass(frozen=True)

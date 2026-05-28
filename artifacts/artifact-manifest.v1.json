@@ -37,5 +37,15 @@
       "version": "v1",
       "description": "JSON Schema for VerificationEpisode — human verification tacit knowledge capture"
     }
+  },
+  "schema_profiles": {
+    "oracle_adw_sh.v1": {
+      "profile_id": "oracle_adw_sh.v1",
+      "schema_owner": "SH",
+      "metadata_path": "docs/generated/schema-context/oracle_adw_sh.schema-metadata.v1.json",
+      "seed_path": "docs/generated/schema-context/oracle_adw_sh.curated-seed.v1.json",
+      "required_tables": ["CHANNELS", "CUSTOMERS", "PRODUCTS", "SALES", "TIMES"],
+      "grant_profile": "production-sh-read"
+    }
   }
 }

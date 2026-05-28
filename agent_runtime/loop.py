@@ -17,7 +17,7 @@ from .intent import analyze_user_intent
 from .model import ActionModel, MockModel, ModelInvocationError
 from .monitor import RunMonitor
 from .query_plan import QueryPlanArtifact, build_query_plan_from_context
-from .schema_context import build_compact_schema_context, load_schema_artifacts
+from .schema_context import build_compact_schema_context, load_schema_artifacts, load_schema_profile_from_manifest
 from .tools import (
     ToolCall,
     ToolExecutionContext,
@@ -27,14 +27,9 @@ from .tools import (
 )
 from .types import Action, Budget, CancellationToken, FinalAnswer, Message, Observation, RunState
 
-# 스키마 아티팩트 경로 — query_plan 빌드에 필요한 메타데이터 및 큐레이션 시드
 _PROJECT_ROOT = Path(__file__).parent.parent
-_SCHEMA_METADATA_PATH = (
-    _PROJECT_ROOT / "docs/generated/schema-context/oracle_adw_sh.schema-metadata.v1.json"
-)
-_CURATED_SEED_PATH = (
-    _PROJECT_ROOT / "docs/generated/schema-context/oracle_adw_sh.curated-seed.v1.json"
-)
+_ARTIFACT_MANIFEST_PATH = _PROJECT_ROOT / "artifacts/artifact-manifest.v1.json"
+_DEFAULT_SCHEMA_PROFILE_ID = "oracle_adw_sh.v1"
 
 
 @dataclass(frozen=True)
@@ -482,7 +477,10 @@ def _english_terms_from_intent(intent_data: dict) -> list[str]:
 def _build_query_plan(user_text: str, *, intent_data: dict | None = None) -> QueryPlanArtifact | None:
     # 예외 발생 시 None 반환 — 쿼리 플랜 실패가 전체 실행을 중단시키지 않도록 격리
     try:
-        artifacts = load_schema_artifacts(_SCHEMA_METADATA_PATH, _CURATED_SEED_PATH)
+        profile = load_schema_profile_from_manifest(
+            _DEFAULT_SCHEMA_PROFILE_ID, _ARTIFACT_MANIFEST_PATH, project_root=_PROJECT_ROOT
+        )
+        artifacts = load_schema_artifacts(profile.metadata_path, profile.seed_path)
         request_terms = _english_terms_from_intent(intent_data) if intent_data else []
         compact = build_compact_schema_context(artifacts, request_text=user_text, request_terms=request_terms)
         return build_query_plan_from_context(compact, request_text=user_text)

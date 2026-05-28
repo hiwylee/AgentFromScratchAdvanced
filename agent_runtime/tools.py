@@ -12,7 +12,12 @@ from .hooks import HookRegistry
 from .query_plan import QueryPlanArtifact, build_query_plan_from_context
 from .redaction import redact
 from .result_explanation import build_fake_result_explanation
-from .schema_context import build_compact_schema_context, load_schema_artifacts
+from .schema_context import (
+    SchemaProfileConfig,
+    build_compact_schema_context,
+    load_schema_artifacts,
+    load_schema_profile_from_manifest,
+)
 from .sql_execution import FakeSqlExecutionAdapter
 from .types import Action
 
@@ -22,12 +27,14 @@ ToolArgType = Literal["string", "integer", "number", "boolean", "object", "array
 ToolHandler = Callable[[dict[str, Any]], dict[str, Any]]
 
 _PROJECT_ROOT = Path(__file__).resolve().parent.parent
-_SCHEMA_METADATA_PATH = (
-    _PROJECT_ROOT / "docs/generated/schema-context/oracle_adw_sh.schema-metadata.v1.json"
-)
-_CURATED_SEED_PATH = (
-    _PROJECT_ROOT / "docs/generated/schema-context/oracle_adw_sh.curated-seed.v1.json"
-)
+_ARTIFACT_MANIFEST_PATH = _PROJECT_ROOT / "artifacts/artifact-manifest.v1.json"
+_DEFAULT_SCHEMA_PROFILE_ID = "oracle_adw_sh.v1"
+
+
+def _load_schema_profile(profile_id: str = _DEFAULT_SCHEMA_PROFILE_ID) -> SchemaProfileConfig:
+    return load_schema_profile_from_manifest(
+        profile_id, _ARTIFACT_MANIFEST_PATH, project_root=_PROJECT_ROOT
+    )
 
 
 class ToolEventSink(Protocol):
@@ -389,10 +396,11 @@ def _mock_schema_context(args: dict[str, Any]) -> dict[str, Any]:
     if not isinstance(request_terms, list):
         request_terms = []
 
+    profile = _load_schema_profile()
     artifacts = load_schema_artifacts(
-        _SCHEMA_METADATA_PATH,
-        _CURATED_SEED_PATH,
-        expected_profile_id="oracle_adw_sh.v1",
+        profile.metadata_path,
+        profile.seed_path,
+        expected_profile_id=profile.profile_id,
     )
     compact = build_compact_schema_context(
         artifacts,

@@ -96,6 +96,11 @@ SSB_REQUIRED_TABLES = frozenset(
     }
 )
 
+SCHEMA_REQUIRED_TABLES: dict[str, frozenset[str]] = {
+    "SH": SH_REQUIRED_TABLES,
+    "SSB": SSB_REQUIRED_TABLES,
+}
+
 PROTECTED_WORKING_USER_NAMES = frozenset(
     {
         "ADMIN",
@@ -899,13 +904,10 @@ def recommend_sample_dataset(table_rows: list[Mapping[str, object]]) -> SampleDa
             tables_by_owner[owner].add(table_name)
 
     missing = {
-        "SH": tuple(sorted(SH_REQUIRED_TABLES - tables_by_owner["SH"])),
-        "SSB": tuple(sorted(SSB_REQUIRED_TABLES - tables_by_owner["SSB"])),
+        owner: tuple(sorted(SCHEMA_REQUIRED_TABLES[owner] - tables_by_owner[owner]))
+        for owner in SCHEMA_REQUIRED_TABLES
     }
-    available = {
-        "SH": not missing["SH"],
-        "SSB": not missing["SSB"],
-    }
+    available = {owner: not missing[owner] for owner in SCHEMA_REQUIRED_TABLES}
     table_counts = {owner: len(tables) for owner, tables in tables_by_owner.items()}
     if available["SH"]:
         return SampleDatasetRecommendation(
@@ -1129,8 +1131,8 @@ def _required_working_user_identifier(value: str | None) -> str:
 
 def _required_sample_schema(value: str) -> str:
     normalized = value.strip().upper()
-    if normalized not in {"SH", "SSB"}:
-        raise ValueError("sample_schema must be SH or SSB")
+    if normalized not in SCHEMA_REQUIRED_TABLES:
+        raise ValueError(f"sample_schema must be one of: {', '.join(sorted(SCHEMA_REQUIRED_TABLES))}")
     return normalized
 
 
@@ -1144,11 +1146,10 @@ def _required_password_placeholder(value: str) -> str:
 
 
 def _required_tables_for_sample_schema(sample_schema: str) -> tuple[str, ...]:
-    if sample_schema == "SH":
-        return tuple(sorted(SH_REQUIRED_TABLES))
-    if sample_schema == "SSB":
-        return tuple(sorted(SSB_REQUIRED_TABLES))
-    raise ValueError("sample_schema must be SH or SSB")
+    tables = SCHEMA_REQUIRED_TABLES.get(sample_schema)
+    if tables is None:
+        raise ValueError(f"sample_schema must be one of: {', '.join(sorted(SCHEMA_REQUIRED_TABLES))}")
+    return tuple(sorted(tables))
 
 
 def _mapping_value_case_insensitive(
