@@ -78,6 +78,11 @@ class HumanDecision:
     checkpoint_identity: str = ""
     checkpoint_hash: str = ""
     decided_at: str = field(default_factory=utc_now)
+    reasoning: str | None = None
+    confidence: float | None = None
+    uncertainty_regions: tuple[str, ...] = ()
+    consultation_trace: tuple[dict, ...] = ()
+    reason_tags: tuple[str, ...] = ()
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -147,12 +152,14 @@ class WorkflowEngine:
         template_path: Path = DEFAULT_TEMPLATE_PATH,
         run_root: Path = Path(".agent/workflows"),
         audit_path: Path = Path(".agent/audit.jsonl"),
+        episode_store: "Any | None" = None,
     ) -> None:
         self.connector = connector or MockPatentAssetConnector()
         self.template = load_workflow_template(template_path)
         self.run_root = run_root
         self.audit_path = audit_path
         self._checkpoint_store: dict[str, dict[str, Any]] = {}
+        self._episode_store = episode_store
 
     # --- checkpoint persistence helpers ---
 
@@ -450,6 +457,26 @@ class WorkflowEngine:
             self._audit(run_id, "workflow_completed", {"workflow": result})
             return result
         self._event(monitor, run_id, "human_decision_recorded", {"decision": decision.to_dict(), "accepted": True})
+
+        # Save verification episode — best-effort telemetry; never blocks resume.
+        if self._episode_store is not None:
+            try:
+                from .tacit_knowledge import VerificationEpisode
+                ep = VerificationEpisode.create(
+                    session_id=run_id,
+                    ai_output=str(checkpoint.get("review_packet", {})),
+                    final_resolution="human_approved" if decision.action == "approve_load" else "human_rejected",
+                    human_revision=decision.reasoning,
+                    confidence_after=decision.confidence,
+                    uncertainty_regions=decision.uncertainty_regions,
+                    consultation_trace=list(decision.consultation_trace),
+                    reason_tags=list(decision.reason_tags),
+                )
+                self._episode_store.append(ep)
+                self._event(monitor, run_id, "verification_episode_created", {"episode_id": ep.episode_id})
+            except Exception as exc:  # noqa: BLE001 - telemetry failure must not abort approved resume
+                self._audit(run_id, "verification_episode_store_error", {"error": str(exc)})
+
         monitor.event(
             "workflow_node_started",
             {"step_id": "load_target_d", "system": "D", "action": "load"},

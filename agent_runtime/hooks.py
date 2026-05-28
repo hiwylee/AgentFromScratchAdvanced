@@ -13,6 +13,11 @@ from .redaction import redact
 
 HookHandler = Callable[[str, dict[str, Any]], None]
 # Signature: handler(event_name: str, data: dict) -> None
+#
+# Tacit knowledge events fired by tacit_knowledge.py and workflow.py:
+#   "verification_episode_created" — a VerificationEpisode was stored
+#   "tacit_signal_extracted"       — TacitSignalExtractor produced heuristics
+#   "reflection_complete"          — ReflectionAgent finished a reflection
 
 
 class HookRegistry:

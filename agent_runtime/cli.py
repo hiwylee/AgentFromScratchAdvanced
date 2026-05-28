@@ -115,6 +115,31 @@ def main(argv: Sequence[str] | None = None) -> int:
     workflow_parser.add_argument("--actor", default=None, help="reviewer name for resume")
     workflow_parser.add_argument("--reason", default="", help="reason/notes for resume")
 
+    tacit_parser = subparsers.add_parser("tacit", help="tacit knowledge — list, reflect, and extract heuristics from verification episodes")
+    tacit_subparsers = tacit_parser.add_subparsers(dest="tacit_command", required=True)
+
+    tacit_list_parser = tacit_subparsers.add_parser("list", help="list all verification episodes")
+    tacit_list_parser.add_argument(
+        "--episodes-dir",
+        default="artifacts/verification-episodes",
+        help="directory containing verification episode JSONL files",
+    )
+
+    tacit_reflect_parser = tacit_subparsers.add_parser("reflect", help="run ReflectionAgent on a specific episode")
+    tacit_reflect_parser.add_argument("--episode-id", required=True, help="episode UUID to reflect on")
+    tacit_reflect_parser.add_argument(
+        "--episodes-dir",
+        default="artifacts/verification-episodes",
+        help="directory containing verification episode JSONL files",
+    )
+
+    tacit_heuristics_parser = tacit_subparsers.add_parser("heuristics", help="extract and deduplicate all heuristics from all episodes")
+    tacit_heuristics_parser.add_argument(
+        "--episodes-dir",
+        default="artifacts/verification-episodes",
+        help="directory containing verification episode JSONL files",
+    )
+
     operator_parser = subparsers.add_parser("operator", help="operator-only commands")
     operator_subparsers = operator_parser.add_subparsers(
         dest="operator_command",
@@ -231,6 +256,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     review_parser.add_argument("--notes", default="", help="reviewer notes (for reject)")
 
     args = parser.parse_args(argv)
+
+    if args.command == "tacit":
+        return _cmd_tacit(args)
 
     if args.command == "ask":
         return _ask(
@@ -1983,6 +2011,122 @@ def _find_candidate_path(candidates_dir: Path, candidate_id: str) -> "Path | Non
         except (OSError, json.JSONDecodeError):
             continue
     return None
+
+
+def _cmd_tacit(args: argparse.Namespace) -> int:
+    from .tacit_knowledge import (
+        ReflectionAgent,
+        TacitSignalExtractor,
+        VerificationEpisode,
+        VerificationEpisodeStore,
+    )
+
+    episodes_dir = Path(args.episodes_dir)
+
+    if args.tacit_command == "list":
+        store = VerificationEpisodeStore(episodes_dir)
+        episodes = store.load_all()
+        if not episodes:
+            print("(no episodes found)")
+            return 0
+        header = f"{'episode_id':<36}  {'timestamp':<27}  {'session_id':<24}  {'final_resolution'}"
+        print(header)
+        print("-" * len(header))
+        for ep in episodes:
+            print(
+                f"{ep.get('episode_id', ''):<36}  "
+                f"{ep.get('timestamp', ''):<27}  "
+                f"{ep.get('session_id', ''):<24}  "
+                f"{ep.get('final_resolution', '')}"
+            )
+        return 0
+
+    if args.tacit_command == "reflect":
+        episode_id = args.episode_id
+        store = VerificationEpisodeStore(episodes_dir)
+        all_episodes = store.load_all()
+        match = next((ep for ep in all_episodes if ep.get("episode_id") == episode_id), None)
+        if match is None:
+            print(f"error: episode not found: {episode_id}", file=sys.stderr)
+            return 1
+        # Reconstruct VerificationEpisode from dict
+        from .tacit_knowledge import CorrectionDiff
+        diff_data = match.get("correction_diff")
+        diff = None
+        if diff_data is not None:
+            diff = CorrectionDiff(
+                removed=tuple(diff_data.get("removed", [])),
+                inserted=tuple(diff_data.get("inserted", [])),
+                tone_change=diff_data.get("tone_change"),
+                terminology_changes=tuple(diff_data.get("terminology_changes", [])),
+                semantic_type=diff_data.get("semantic_type", "other"),
+            )
+        ep = VerificationEpisode(
+            episode_id=match["episode_id"],
+            timestamp=match["timestamp"],
+            session_id=match["session_id"],
+            ai_output=match.get("ai_output", ""),
+            final_resolution=match.get("final_resolution", "human_approved"),
+            input_context=match.get("input_context", {}),
+            retrieved_context=match.get("retrieved_context", {}),
+            human_revision=match.get("human_revision"),
+            correction_diff=diff,
+            confidence_before=match.get("confidence_before"),
+            confidence_after=match.get("confidence_after"),
+            uncertainty_regions=tuple(match.get("uncertainty_regions", [])),
+            consultation_trace=tuple(match.get("consultation_trace", [])),
+            reason_tags=tuple(match.get("reason_tags", [])),
+            reflection_summary=match.get("reflection_summary"),
+        )
+        agent = ReflectionAgent()
+        result = agent.reflect(ep)
+        print(json.dumps(result.to_dict(), ensure_ascii=False, indent=2))
+        return 0
+
+    if args.tacit_command == "heuristics":
+        store = VerificationEpisodeStore(episodes_dir)
+        all_episodes = store.load_all()
+        if not all_episodes:
+            print("(no episodes found)")
+            return 0
+        from .tacit_knowledge import CorrectionDiff
+        extractor = TacitSignalExtractor()
+        seen: list[str] = []
+        for match in all_episodes:
+            diff_data = match.get("correction_diff")
+            diff = None
+            if diff_data is not None:
+                diff = CorrectionDiff(
+                    removed=tuple(diff_data.get("removed", [])),
+                    inserted=tuple(diff_data.get("inserted", [])),
+                    tone_change=diff_data.get("tone_change"),
+                    terminology_changes=tuple(diff_data.get("terminology_changes", [])),
+                    semantic_type=diff_data.get("semantic_type", "other"),
+                )
+            ep = VerificationEpisode(
+                episode_id=match["episode_id"],
+                timestamp=match["timestamp"],
+                session_id=match["session_id"],
+                ai_output=match.get("ai_output", ""),
+                final_resolution=match.get("final_resolution", "human_approved"),
+                correction_diff=diff,
+                uncertainty_regions=tuple(match.get("uncertainty_regions", [])),
+                consultation_trace=tuple(match.get("consultation_trace", [])),
+                reason_tags=tuple(match.get("reason_tags", [])),
+            )
+            signal = extractor.extract(ep)
+            for h in signal.suspected_heuristics:
+                if h not in seen:
+                    seen.append(h)
+        if not seen:
+            print("(no heuristics extracted)")
+            return 0
+        for h in seen:
+            print(f"- {h}")
+        return 0
+
+    print(f"error: unknown tacit command: {args.tacit_command}", file=sys.stderr)
+    return 2
 
 
 def _operator_context() -> dict[str, object]:

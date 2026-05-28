@@ -569,6 +569,64 @@ class WorkflowEngineTests(unittest.TestCase):
             self.assertTrue(all(event["schema_version"] == TRACE_EVENT_SCHEMA_VERSION for event in trace_events))
             self.assertTrue(all("payload" in event for event in trace_events))
 
+    def test_resume_saves_episode_to_store_when_provided(self):
+        from agent_runtime.tacit_knowledge import VerificationEpisodeStore
+
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            connector = MockPatentAssetConnector()
+            episodes_dir = tmp_path / "episodes"
+            store = VerificationEpisodeStore(episodes_dir)
+            engine = WorkflowEngine(
+                connector=connector,
+                run_root=tmp_path / "runs",
+                audit_path=tmp_path / "audit.jsonl",
+                episode_store=store,
+            )
+            result = engine.run_patent_asset_replacement(period="current_month")
+            run_id = result["run_id"]
+
+            resumed = engine.resume_with_human_decision(
+                run_id,
+                self._approval(result, ("PA-100", "PA-200")),
+            )
+
+            self.assertEqual("completed", resumed["state"])
+            episodes = store.load_session(run_id)
+            self.assertEqual(1, len(episodes))
+            ep = episodes[0]
+            self.assertEqual(run_id, ep["session_id"])
+            self.assertEqual("human_approved", ep["final_resolution"])
+            self.assertIsNotNone(ep["episode_id"])
+            self.assertEqual("agent-runtime.verification-episode.v1", ep["schema_version"])
+
+    def test_resume_completes_when_episode_store_append_raises(self):
+        """Adversarial regression: episode store failure must not abort an approved resume."""
+        from unittest.mock import MagicMock
+
+        connector = MockPatentAssetConnector()
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            bad_store = MagicMock()
+            bad_store.append.side_effect = OSError("disk full")
+            engine = WorkflowEngine(
+                connector=connector,
+                run_root=tmp_path / "runs",
+                audit_path=tmp_path / "audit.jsonl",
+                episode_store=bad_store,
+            )
+            result = engine.run_patent_asset_replacement(period="current_month")
+            run_id = result["run_id"]
+
+            resumed = engine.resume_with_human_decision(
+                run_id,
+                self._approval(result, ("PA-100", "PA-200")),
+            )
+
+            # Approved resume must complete despite store failure.
+            self.assertEqual("completed", resumed["state"])
+            bad_store.append.assert_called_once()
+
     def _step(self, result, step_id):
         return next(step for step in result["steps"] if step["step_id"] == step_id)
 

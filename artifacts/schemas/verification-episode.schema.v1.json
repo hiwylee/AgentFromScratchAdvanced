@@ -1,0 +1,44 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "VerificationEpisode",
+  "description": "Captures a human verification event including corrections, reasoning, and tacit signals.",
+  "type": "object",
+  "required": ["episode_id", "timestamp", "session_id", "ai_output", "final_resolution", "schema_version"],
+  "properties": {
+    "episode_id": {"type": "string", "format": "uuid"},
+    "timestamp": {"type": "string", "format": "date-time"},
+    "session_id": {"type": "string"},
+    "input_context": {"type": "object"},
+    "retrieved_context": {"type": "object"},
+    "ai_output": {"type": "string"},
+    "human_revision": {"type": ["string", "null"]},
+    "correction_diff": {
+      "type": ["object", "null"],
+      "properties": {
+        "removed": {"type": "array", "items": {"type": "string"}},
+        "inserted": {"type": "array", "items": {"type": "string"}},
+        "tone_change": {"type": ["string", "null"]},
+        "terminology_changes": {"type": "array", "items": {"type": "string"}},
+        "semantic_type": {"type": "string", "enum": ["literal_to_contextual", "tone", "policy_risk", "domain_nuance", "escalation", "no_change", "other"]}
+      }
+    },
+    "confidence_before": {"type": ["number", "null"], "minimum": 0, "maximum": 1},
+    "confidence_after": {"type": ["number", "null"], "minimum": 0, "maximum": 1},
+    "uncertainty_regions": {"type": "array", "items": {"type": "string"}},
+    "consultation_trace": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["person", "reason"],
+        "properties": {
+          "person": {"type": "string"},
+          "reason": {"type": "string"}
+        }
+      }
+    },
+    "reason_tags": {"type": "array", "items": {"type": "string"}},
+    "reflection_summary": {"type": ["string", "null"]},
+    "final_resolution": {"type": "string", "enum": ["human_override", "human_approved", "human_rejected", "escalated"]},
+    "schema_version": {"type": "string", "const": "agent-runtime.verification-episode.v1"}
+  }
+}

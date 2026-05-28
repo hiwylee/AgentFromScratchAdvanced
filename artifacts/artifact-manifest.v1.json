@@ -28,5 +28,14 @@
       "path": "artifacts/evals/drift/self-evolution-drift-v1.json",
       "version": "1"
     }
+  },
+  "schema_versions": {
+    "verification_episode": {
+      "id": "verification-episode-schema-v1",
+      "type": "schema",
+      "path": "artifacts/schemas/verification-episode.schema.v1.json",
+      "version": "v1",
+      "description": "JSON Schema for VerificationEpisode — human verification tacit knowledge capture"
+    }
   }
 }
