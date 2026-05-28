@@ -36,3 +36,10 @@ __pycache__/
 
 # Claude Code agent worktrees (created by parallel agent runs)
 .claude/worktrees/
+
+# Frontend build artifacts (Next.js)
+frontend/.next/
+frontend/node_modules/
+frontend/.env.local
+frontend/tsconfig.tsbuildinfo
+frontend/.playwright-mcp/
