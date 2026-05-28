@@ -101,6 +101,12 @@ def main(argv: Sequence[str] | None = None) -> int:
         default=None,
         help="directory for cross-session memory records; enables session summarization on completion",
     )
+    ask_parser.add_argument(
+        "--allow-real-query",
+        action="store_true",
+        default=False,
+        help="operator flag: allow adw_query tool to execute real read-only SQL (requires ADW credentials)",
+    )
 
     status_parser = subparsers.add_parser("status", help="show latest run status")
     status_parser.add_argument("--run-dir", default=str(DEFAULT_RUN_DIR))
@@ -285,6 +291,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             openai_base_url=args.openai_base_url,
             openai_timeout_seconds=args.openai_timeout_seconds,
             memory_dir=Path(args.memory_dir) if args.memory_dir else None,
+            allow_real_query=getattr(args, "allow_real_query", False),
         )
     if args.command == "status":
         return _status(Path(args.run_dir))
@@ -356,6 +363,7 @@ def _ask(
     openai_base_url: str | None,
     openai_timeout_seconds: float | None,
     memory_dir: Path | None = None,
+    allow_real_query: bool = False,
 ) -> int:
     user_text = " ".join(text_parts)
     try:
@@ -382,6 +390,7 @@ def _ask(
         budget=budget,
         model=model,
         memory_dir=memory_dir,  # load approved memories AND write proposed ones
+        allow_real_query=allow_real_query,
     )
     result = loop.run(user_text)
     print(json.dumps(result.to_dict(), ensure_ascii=False, indent=2))

@@ -62,18 +62,23 @@ class ToolRegistryTests(unittest.TestCase):
         self.assertIn("argument limit must be integer", errors)
         self.assertIn("unknown argument: extra", errors)
 
-    def test_default_registry_exposes_only_low_risk_read_only_mock_tools(self):
+    def test_default_registry_exposes_mock_and_adw_tools(self):
         registry = default_tool_registry()
 
         specs = registry.specs()
+        names = [spec["name"] for spec in specs]
 
-        self.assertEqual(["mock_schema_context", "mock_data_query"], [spec["name"] for spec in specs])
+        self.assertIn("mock_schema_context", names)
+        self.assertIn("mock_data_query", names)
+        self.assertIn("adw_query", names)
         self.assertTrue(all(spec["read_only"] for spec in specs))
-        self.assertTrue(all(spec["risk_level"] == "low" for spec in specs))
+        mock_specs = [spec for spec in specs if spec["name"] == "mock_schema_context"]
         self.assertEqual(
             ["required_context", "request_text", "request_terms"],
-            [parameter["name"] for parameter in specs[0]["parameters"]],
+            [parameter["name"] for parameter in mock_specs[0]["parameters"]],
         )
+        low_risk_specs = [spec for spec in specs if spec["name"] in {"mock_schema_context", "mock_data_query"}]
+        self.assertTrue(all(spec["risk_level"] == "low" for spec in low_risk_specs))
 
 
 class ToolRunnerTests(unittest.TestCase):
@@ -440,6 +445,41 @@ class ToolRunnerTests(unittest.TestCase):
             self.assertEqual("completed", result.state)
             self.assertEqual("clarification_required", result.output["query_plan"]["status"])
             self.assertNotIn("result_explanation", result.output)
+
+
+class AdwQueryToolTests(unittest.TestCase):
+    def test_adw_query_tool_registered(self):
+        registry = default_tool_registry()
+        registered = registry.get("adw_query")
+        self.assertEqual("adw_query", registered.spec.name)
+        self.assertEqual("high", registered.spec.risk_level)
+        self.assertTrue(registered.spec.read_only)
+
+    def test_adw_query_blocked_without_approval(self):
+        import tempfile
+        registry = default_tool_registry()
+        with tempfile.TemporaryDirectory() as tmp:
+            context = ToolExecutionContext(
+                run_id="test",
+                audit_path=Path(tmp) / "audit.jsonl",
+                approved_high_risk_tools=(),  # NOT approved
+            )
+            runner = ToolRunner(registry, context=context)
+            result = runner.run(ToolCall("adw_query", {"sql": "SELECT 1 FROM DUAL"}))
+            self.assertEqual("blocked", result.state)
+
+    def test_adw_query_blocked_with_empty_sql(self):
+        from agent_runtime.tools import _handle_adw_query
+        result = _handle_adw_query({"sql": ""})
+        self.assertEqual("blocked", result["status"])
+        self.assertEqual("empty_sql", result["error_code"])
+        self.assertFalse(result["real_database_execution"])
+
+    def test_adw_query_blocked_with_write_sql(self):
+        from agent_runtime.tools import _handle_adw_query
+        result = _handle_adw_query({"sql": "DELETE FROM SALES"})
+        self.assertEqual("blocked", result["status"])
+        self.assertFalse(result["real_database_execution"])
 
 
 def _tool_context(

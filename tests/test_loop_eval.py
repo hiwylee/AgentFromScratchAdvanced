@@ -134,5 +134,28 @@ class AgentLoopEvalIntegrationTests(unittest.TestCase):
         self.assertIsNotNone(result.final_answer)
 
 
+class AgentLoopAllowRealQueryTests(unittest.TestCase):
+    def test_agent_loop_no_real_query_by_default(self):
+        import tempfile
+        from pathlib import Path
+        with tempfile.TemporaryDirectory() as tmp:
+            loop = AgentLoop(
+                run_root=Path(tmp) / "runs",
+                audit_path=Path(tmp) / "audit.jsonl",
+            )
+            self.assertFalse(loop.allow_real_query)
+
+    def test_agent_loop_allow_real_query_flag(self):
+        import tempfile
+        from pathlib import Path
+        with tempfile.TemporaryDirectory() as tmp:
+            loop = AgentLoop(
+                run_root=Path(tmp) / "runs",
+                audit_path=Path(tmp) / "audit.jsonl",
+                allow_real_query=True,
+            )
+            self.assertTrue(loop.allow_real_query)
+
+
 if __name__ == "__main__":
     unittest.main()

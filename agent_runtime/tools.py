@@ -18,7 +18,14 @@ from .schema_context import (
     load_schema_artifacts,
     load_schema_profile_from_manifest,
 )
-from .sql_execution import FakeSqlExecutionAdapter
+from .oracle_adw import (
+    OracleAdwConfig,
+    SqlclReadOnlyExecutionSettings,
+    validate_read_only_sql,
+    verify_sqlcl,
+    verify_wallet_paths,
+)
+from .sql_execution import FakeSqlExecutionAdapter, SqlclReadOnlyAdapter, SqlExecutionRequest
 from .types import Action
 
 
@@ -163,6 +170,70 @@ class ToolRegistry:
         return errors
 
 
+def _handle_adw_query(args: dict[str, Any]) -> dict[str, Any]:
+    sql = str(args.get("sql") or "").strip()
+    query_plan_id = str(args.get("query_plan_id") or "")
+    if not sql:
+        return {
+            "status": "blocked",
+            "error_code": "empty_sql",
+            "error": "sql argument is required and must not be empty",
+            "real_database_execution": False,
+        }
+    policy = validate_read_only_sql(sql)
+    if not policy.allowed:
+        return {
+            "status": "blocked",
+            "error_code": "sql_policy_violation",
+            "error": f"SQL blocked by read-only policy: {policy.reason}",
+            "policy_reason": policy.reason,
+            "real_database_execution": False,
+        }
+    try:
+        config = OracleAdwConfig.from_env()
+    except Exception as exc:
+        return {
+            "status": "config_error",
+            "error_code": "adw_config_unavailable",
+            "error": f"Oracle ADW config is unavailable: {type(exc).__name__}",
+            "real_database_execution": False,
+        }
+    settings = SqlclReadOnlyExecutionSettings()
+    adapter = SqlclReadOnlyAdapter(config, settings, allow_real_execution=True)
+    request = SqlExecutionRequest(
+        sql=sql,
+        purpose="adw_query_tool",
+        metadata={"query_plan_id": query_plan_id} if query_plan_id else {},
+    )
+    try:
+        response = adapter.execute(request)
+    except Exception as exc:
+        return {
+            "status": "execution_error",
+            "error_code": "adapter_exception",
+            "error": f"ADW adapter raised: {type(exc).__name__}",
+            "real_database_execution": True,
+        }
+    result: dict[str, Any] = {
+        "status": response.status,
+        "real_database_execution": True,
+        "backend": response.backend,
+        "query_plan_id": query_plan_id,
+        "row_count": response.row_count,
+        "oracle_adw_execution": True,
+        "sqlcl_execution": True,
+    }
+    if response.status == "succeeded" and response.rows is not None:
+        result["rows"] = list(response.rows[:10])  # bounded: max 10 rows to observation
+        result["rows_truncated"] = len(response.rows) > 10
+    if response.error is not None:
+        result["error_message"] = response.error.message
+        result["error_code"] = response.error.code
+    if response.audit_metadata:
+        result["audit_metadata"] = {k: v for k, v in response.audit_metadata.items() if k not in ("stdin", "password", "dsn")}
+    return result
+
+
 def default_tool_registry() -> ToolRegistry:
     registry = ToolRegistry()
     registry.register(
@@ -226,6 +297,25 @@ def default_tool_registry() -> ToolRegistry:
             cost_estimate="fast",
         ),
         _mock_data_query,
+    )
+    registry.register(
+        ToolSpec(
+            name="adw_query",
+            description=(
+                "Execute a read-only SQL query against Oracle ADW as the configured working user. "
+                "Requires explicit operator approval (risk_level=high). "
+                "SQL is validated before execution. Real database execution."
+            ),
+            parameters=(
+                ToolParameter(name="sql", type="string", required=True, description="Read-only SQL to execute."),
+                ToolParameter(name="query_plan_id", type="string", required=False, description="Originating query plan artifact id."),
+            ),
+            risk_level="high",
+            read_only=True,
+            capabilities=("oracle_sh.data.read",),
+            cost_estimate="slow",
+        ),
+        _handle_adw_query,
     )
     return registry
 

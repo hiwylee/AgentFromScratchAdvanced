@@ -89,6 +89,7 @@ class AgentLoop:
         hook_registry: HookRegistry | None = None,
         use_plan_execution: bool = False,
         session_ctx: "SessionContext | None" = None,
+        allow_real_query: bool = False,
     ) -> None:
         self.model = model or MockModel()
         self.budget = budget or Budget()
@@ -101,6 +102,7 @@ class AgentLoop:
         self._hook_registry = hook_registry
         self._use_plan_execution = use_plan_execution
         self._session_ctx = session_ctx
+        self.allow_real_query = allow_real_query
 
     def run(self, user_text: str, cancellation_token: CancellationToken | None = None) -> AgentResult:
         token = cancellation_token or self.cancellation_token
@@ -235,6 +237,43 @@ class AgentLoop:
                 if query_plan is not None:
                     monitor.event("query_plan_built", {"query_plan": query_plan.to_dict()})
                     self._audit(run_id, "query_plan_built", {"query_plan": query_plan.to_dict()})
+
+            # Milestone 8: if query plan is planned AND real query is allowed, execute
+            if (
+                self.allow_real_query
+                and tool_result.state == "completed"
+                and query_plan is not None
+                and query_plan.status == "planned"
+                and query_plan.proposed_sql
+            ):
+                adw_call = ToolCall(
+                    "adw_query",
+                    {
+                        "sql": query_plan.proposed_sql,
+                        "query_plan_id": query_plan.schema_context.get("schema_metadata_artifact_id", ""),
+                    },
+                )
+                adw_runner = ToolRunner(
+                    self.tool_registry,
+                    context=ToolExecutionContext(
+                        run_id=run_id,
+                        audit_path=self.audit_path,
+                        approved_high_risk_tools=("adw_query",),
+                    ),
+                    event_sink=monitor.event,
+                )
+                adw_tool_result = adw_runner.run(adw_call, max_attempts=1)
+                action_steps_used += 1
+                monitor.event("adw_query_executed", {"result": adw_tool_result.to_dict()})
+                self._audit(run_id, "adw_query_executed", {"result": adw_tool_result.to_dict()})
+                # Merge adw result into observation
+                observation = Observation(
+                    source=f"tool:{tool_result.tool_name}+adw_query",
+                    content={
+                        "tool_result": tool_result.to_dict(),
+                        "adw_query_result": adw_tool_result.to_dict(),
+                    },
+                )
         else:
             observation = Observation(
                 source="mock_runtime",

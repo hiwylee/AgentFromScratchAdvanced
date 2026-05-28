@@ -1560,7 +1560,11 @@ class RuntimeControlTests(unittest.TestCase):
         self.assertNotIn("operator_adw_query", specs)
         self.assertNotIn("operator_adw_provision_working_user", specs)
         self.assertNotIn("sql_execution", specs)
-        self.assertEqual(["mock_schema_context", "mock_data_query"], specs)
+        # adw_query is registered but gated behind risk_level=high — not auto-approved
+        self.assertEqual(["mock_schema_context", "mock_data_query", "adw_query"], specs)
+        # adw_query must require explicit approval
+        adw_spec = next(spec for spec in registry.specs() if spec["name"] == "adw_query")
+        self.assertEqual("high", adw_spec["risk_level"])
 
 
 class CancelDuringActionSelection:
