@@ -3,6 +3,21 @@
 This is a human-written project change log. It tracks meaningful project
 direction and implementation changes, not every tiny edit.
 
+## 2026-05-29
+
+- **Phase 1 (CP1) — Production DB permission hardening**: Added `production-sh-read`
+  grant profile to `adw-provision-working-user`. The new profile grants only
+  `CREATE SESSION` (system) + `GRANT SELECT ON SH.{table}` for the five core SH
+  tables (CHANNELS, CUSTOMERS, PRODUCTS, SALES, TIMES) plus private synonyms, replacing
+  the broad prototype `SELECT ANY TABLE` + `DWROLE`. Drift detection now rejects
+  `SELECT ANY TABLE` and `DWROLE` when the production profile is active.
+  New helpers: `_admin_required_object_grants`, `_admin_drift_roles`,
+  `_admin_drift_sys_privileges`. `_admin_account_state` extended with
+  `required_object_grants`, `drift_roles_set`, `drift_sys_privileges_set` params;
+  `dba_tab_privs` inspection query added. Updated runbook with production section,
+  drift-revoke guidance, and object-grant verification SQL. 3 new tests added;
+  544 tests / 109 subtests pass.
+
 ## 2026-05-16
 
 - Created the initial harness structure for building an agent runtime from

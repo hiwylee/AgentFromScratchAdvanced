@@ -44,6 +44,42 @@ The current `prototype-any-table-read` profile grants `CREATE SESSION`,
 is prototype-only and must be reduced to object-level SH grants before
 production use.
 
+## Production-Grade Provisioning
+
+Use the `production-sh-read` profile to replace the broad prototype grants with
+object-level SELECT grants on the five core SH tables:
+
+```bash
+bin/agent operator adw-provision-working-user \
+  --grant-profile production-sh-read \
+  --confirm-live-adw-admin-provision \
+  --audit-log /tmp/afs-adw-operator-audit.jsonl
+```
+
+The `production-sh-read` profile grants:
+- `CREATE SESSION` (system privilege)
+- `SELECT ON SH.CHANNELS`, `SELECT ON SH.CUSTOMERS`, `SELECT ON SH.PRODUCTS`,
+  `SELECT ON SH.SALES`, `SELECT ON SH.TIMES` (object-level grants via `dba_tab_privs`)
+- Private synonyms for the five SH tables (same as prototype)
+
+**Drift detection**: if the working user already has `SELECT ANY TABLE` or
+`DWROLE`, the command returns `rejected_drift` and stops without applying any
+changes. Revoke those grants manually before running the production profile:
+
+```sql
+REVOKE SELECT ANY TABLE FROM AIAGENT;
+REVOKE DWROLE FROM AIAGENT;
+```
+
+Verify object grants after provisioning:
+
+```sql
+SELECT privilege, owner, table_name
+FROM dba_tab_privs
+WHERE grantee = 'AIAGENT'
+ORDER BY owner, table_name;
+```
+
 ## Smoke Check
 
 After provisioning, run the fixed smoke query:

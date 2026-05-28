@@ -1372,6 +1372,186 @@ class RuntimeControlTests(unittest.TestCase):
             self.assertIn("CREATE OR REPLACE SYNONYM AIAGENT.TIMES FOR SH.TIMES", calls[1].stdin)
             self.assertNotIn("CREATE OR REPLACE SYNONYM AIAGENT.SALES FOR SH.SALES", calls[1].stdin)
 
+    def test_operator_adw_provision_production_sh_read_creates_object_grants(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            wallet_path = tmp_path / "wallet"
+            wallet_path.mkdir()
+            output = io.StringIO()
+            audit_path = tmp_path / "audit.jsonl"
+            calls = []
+            sh_tables = ["CHANNELS", "CUSTOMERS", "PRODUCTS", "SALES", "TIMES"]
+            object_grants = [("SELECT", "SH", t) for t in sh_tables]
+            responses = [
+                '{"items":[]}',
+                "User AIAGENT created.\n",
+                _adw_provision_state_json(
+                    "post",
+                    roles=[],
+                    system_privileges=["CREATE SESSION"],
+                    synonyms=sh_tables,
+                    object_grants=object_grants,
+                ),
+            ]
+
+            def fake_run(request):
+                calls.append(request)
+                return SqlclRunnerResult(
+                    returncode=0,
+                    stdout=responses[len(calls) - 1],
+                    stderr="",
+                )
+
+            with _operator_admin_env(wallet_path):
+                with patch(
+                    "agent_runtime.cli.verify_sqlcl",
+                    return_value=SqlclStatus(
+                        configured_path="/opt/sqlcl/bin/sql",
+                        resolved_path="/opt/sqlcl/bin/sql",
+                        exists=True,
+                        executable=True,
+                        version_checked=True,
+                        ok=True,
+                        version="SQLcl test",
+                    ),
+                ):
+                    with patch("agent_runtime.cli.run_sqlcl_subprocess", fake_run):
+                        with redirect_stdout(output):
+                            exit_code = main(
+                                [
+                                    "operator",
+                                    "adw-provision-working-user",
+                                    "--confirm-live-adw-admin-provision",
+                                    "--grant-profile",
+                                    "production-sh-read",
+                                    "--audit-log",
+                                    str(audit_path),
+                                ]
+                            )
+
+            payload = json.loads(output.getvalue())
+            rendered = output.getvalue() + audit_path.read_text(encoding="utf-8")
+            self.assertEqual(0, exit_code)
+            self.assertEqual("created", payload["provisioning_classification"])
+            self.assertEqual("production-sh-read", payload["grant_profile"])
+            expected_privs = ["CREATE SESSION"] + [f"SELECT ON SH.{t}" for t in sh_tables]
+            self.assertEqual(sorted(expected_privs), sorted(payload["requested_privileges"]))
+            # DDL: CREATE USER + object grants + synonyms
+            self.assertIn("CREATE USER AIAGENT", calls[1].stdin)
+            self.assertIn("GRANT SELECT ON SH.SALES TO AIAGENT", calls[1].stdin)
+            self.assertIn("GRANT SELECT ON SH.PRODUCTS TO AIAGENT", calls[1].stdin)
+            self.assertNotIn("GRANT SELECT ANY TABLE TO AIAGENT", calls[1].stdin)
+            self.assertNotIn("GRANT DWROLE TO AIAGENT", calls[1].stdin)
+            self.assertIn("CREATE OR REPLACE SYNONYM AIAGENT.SALES FOR SH.SALES", calls[1].stdin)
+            self.assertNotIn("admin-secret", rendered)
+            self.assertNotIn("db-secret", rendered)
+
+    def test_operator_adw_provision_production_sh_read_rejects_select_any_table_drift(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            wallet_path = tmp_path / "wallet"
+            wallet_path.mkdir()
+            output = io.StringIO()
+            calls = []
+
+            def fake_run(request):
+                calls.append(request)
+                return SqlclRunnerResult(
+                    returncode=0,
+                    stdout=_adw_provision_state_json(
+                        "pre",
+                        roles=["DWROLE"],
+                        system_privileges=["CREATE SESSION", "SELECT ANY TABLE"],
+                        synonyms=["CHANNELS", "CUSTOMERS", "PRODUCTS", "SALES", "TIMES"],
+                    ),
+                    stderr="",
+                )
+
+            with _operator_admin_env(wallet_path):
+                with patch(
+                    "agent_runtime.cli.verify_sqlcl",
+                    return_value=SqlclStatus(
+                        configured_path="/opt/sqlcl/bin/sql",
+                        resolved_path="/opt/sqlcl/bin/sql",
+                        exists=True, executable=True,
+                        version_checked=True, ok=True,
+                        version="SQLcl test",
+                    ),
+                ):
+                    with patch("agent_runtime.cli.run_sqlcl_subprocess", fake_run):
+                        with redirect_stdout(output):
+                            exit_code = main(
+                                [
+                                    "operator",
+                                    "adw-provision-working-user",
+                                    "--confirm-live-adw-admin-provision",
+                                    "--grant-profile",
+                                    "production-sh-read",
+                                    "--audit-log",
+                                    str(tmp_path / "audit.jsonl"),
+                                ]
+                            )
+
+            payload = json.loads(output.getvalue())
+            self.assertEqual(1, exit_code)
+            self.assertEqual("rejected_drift", payload["provisioning_classification"])
+            # Only precheck ran, no apply
+            self.assertEqual(1, len(calls))
+
+    def test_operator_adw_provision_production_sh_read_already_compliant(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            wallet_path = tmp_path / "wallet"
+            wallet_path.mkdir()
+            output = io.StringIO()
+            calls = []
+            sh_tables = ["CHANNELS", "CUSTOMERS", "PRODUCTS", "SALES", "TIMES"]
+            object_grants = [("SELECT", "SH", t) for t in sh_tables]
+
+            def fake_run(request):
+                calls.append(request)
+                return SqlclRunnerResult(
+                    returncode=0,
+                    stdout=_adw_provision_state_json(
+                        "pre",
+                        roles=[],
+                        system_privileges=["CREATE SESSION"],
+                        synonyms=sh_tables,
+                        object_grants=object_grants,
+                    ),
+                    stderr="",
+                )
+
+            with _operator_admin_env(wallet_path):
+                with patch(
+                    "agent_runtime.cli.verify_sqlcl",
+                    return_value=SqlclStatus(
+                        configured_path="/opt/sqlcl/bin/sql",
+                        resolved_path="/opt/sqlcl/bin/sql",
+                        exists=True, executable=True,
+                        version_checked=True, ok=True,
+                        version="SQLcl test",
+                    ),
+                ):
+                    with patch("agent_runtime.cli.run_sqlcl_subprocess", fake_run):
+                        with redirect_stdout(output):
+                            exit_code = main(
+                                [
+                                    "operator",
+                                    "adw-provision-working-user",
+                                    "--confirm-live-adw-admin-provision",
+                                    "--grant-profile",
+                                    "production-sh-read",
+                                    "--audit-log",
+                                    str(tmp_path / "audit.jsonl"),
+                                ]
+                            )
+
+            payload = json.loads(output.getvalue())
+            self.assertEqual(0, exit_code)
+            self.assertEqual("already_compliant", payload["provisioning_classification"])
+            self.assertEqual(1, len(calls))
+
     def test_default_tools_do_not_expose_live_adw_execution(self):
         registry = default_tool_registry()
         specs = [spec["name"] for spec in registry.specs()]
@@ -1450,6 +1630,7 @@ def _adw_provision_state_json(
     roles: list[str],
     system_privileges: list[str],
     synonyms: list[str],
+    object_grants: list[tuple[str, str, str]] | None = None,
 ) -> str:
     payloads = [
         {
@@ -1485,6 +1666,18 @@ def _adw_provision_state_json(
             ]
         },
     ]
+    if object_grants:
+        payloads.append({
+            "items": [
+                {
+                    "afs_section": f"{prefix}_object_grant",
+                    "privilege": priv,
+                    "owner": owner,
+                    "table_name": tbl,
+                }
+                for priv, owner, tbl in object_grants
+            ]
+        })
     return "\n".join(json.dumps(payload) for payload in payloads)
 
 

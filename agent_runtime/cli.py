@@ -57,6 +57,8 @@ ADMIN_PROVISION_DRIFT_SYS_PRIVILEGES = (
     "INSERT ANY TABLE",
     "UPDATE ANY TABLE",
 )
+ADMIN_PRODUCTION_DRIFT_EXTRA_ROLES = ("DWROLE",)
+ADMIN_PRODUCTION_DRIFT_EXTRA_SYS_PRIVILEGES = ("SELECT ANY TABLE",)
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -188,9 +190,13 @@ def main(argv: Sequence[str] | None = None) -> int:
     admin_provision_parser.add_argument("--timeout-seconds", type=int, default=60)
     admin_provision_parser.add_argument(
         "--grant-profile",
-        choices=("prototype-any-table-read",),
+        choices=("prototype-any-table-read", "production-sh-read"),
         required=True,
-        help="explicit grant profile to apply; prototype-any-table-read grants DWROLE and SELECT ANY TABLE",
+        help=(
+            "explicit grant profile to apply; "
+            "prototype-any-table-read grants DWROLE and SELECT ANY TABLE; "
+            "production-sh-read grants only CREATE SESSION and object-level SELECT on SH tables"
+        ),
     )
     admin_provision_parser.add_argument(
         "--confirm-live-adw-admin-provision",
@@ -1356,7 +1362,12 @@ def _run_admin_provision_sqlcl(
     working_user = _safe_working_user(config.db_user)
     admin_user = _safe_oracle_identifier(config.admin_user)
     escaped_password = config.db_user_pass.replace('"', '""')
-    required_synonyms = sorted(SH_REQUIRED_TABLES) if grant_profile == "prototype-any-table-read" else []
+    required_synonyms = (
+        sorted(SH_REQUIRED_TABLES)
+        if grant_profile in ("prototype-any-table-read", "production-sh-read")
+        else []
+    )
+    required_object_grants = _admin_required_object_grants(grant_profile=grant_profile)
     pre_result = _run_admin_sqlcl_statements(
         config,
         timeout_seconds=timeout_seconds,
@@ -1395,6 +1406,10 @@ def _run_admin_provision_sqlcl(
     missing_roles = tuple(str(value) for value in pre_state.get("missing_roles", ()))
     missing_sys_privileges = tuple(str(value) for value in pre_state.get("missing_system_privileges", ()))
     missing_synonyms = tuple(str(value) for value in pre_state.get("missing_synonyms", ()))
+    missing_object_grants = [
+        (str(p), str(o), str(t))
+        for p, o, t in pre_state.get("missing_object_grants", [])
+    ]
     user_exists = bool(pre_state.get("exists"))
     account_status = pre_state.get("account_status")
     statements: list[str] = []
@@ -1414,6 +1429,9 @@ def _run_admin_provision_sqlcl(
     if "DWROLE" in missing_roles:
         statements.append(f"ALTER USER {working_user} DEFAULT ROLE ALL;")
         actions_applied.append("default_role_all")
+    for priv, owner, table_name in missing_object_grants:
+        statements.append(f"GRANT {priv} ON {owner}.{table_name} TO {working_user};")
+        actions_applied.append(f"grant_object:{priv}:{owner}.{table_name}")
     for table_name in sorted(set(required_synonyms) & set(missing_synonyms)):
         statements.append(f"CREATE OR REPLACE SYNONYM {working_user}.{table_name} FOR SH.{table_name};")
         actions_applied.append(f"create_synonym:{table_name}")
@@ -1525,13 +1543,18 @@ def _admin_inspection_statements(
     prefix: str,
 ) -> list[str]:
     required_roles, required_sys_privileges = _admin_required_grants(grant_profile=grant_profile)
-    required_synonyms = sorted(SH_REQUIRED_TABLES) if grant_profile == "prototype-any-table-read" else []
-    role_sql_list = _sql_string_list((*required_roles, *ADMIN_PROVISION_DRIFT_ROLES))
-    sys_privilege_sql_list = _sql_string_list(
-        (*required_sys_privileges, *ADMIN_PROVISION_DRIFT_SYS_PRIVILEGES)
+    required_object_grants = _admin_required_object_grants(grant_profile=grant_profile)
+    required_synonyms = (
+        sorted(SH_REQUIRED_TABLES)
+        if grant_profile in ("prototype-any-table-read", "production-sh-read")
+        else []
     )
+    drift_roles = _admin_drift_roles(grant_profile=grant_profile)
+    drift_sys_privs = _admin_drift_sys_privileges(grant_profile=grant_profile)
+    role_sql_list = _sql_string_list((*required_roles, *drift_roles))
+    sys_privilege_sql_list = _sql_string_list((*required_sys_privileges, *drift_sys_privs))
     synonym_sql_list = _sql_string_list(required_synonyms)
-    return [
+    statements = [
         (
             f"select '{prefix}_user' as afs_section, username, account_status from dba_users "
             f"where username = '{working_user}';"
@@ -1552,6 +1575,17 @@ def _admin_inspection_statements(
             f"and synonym_name in ({synonym_sql_list}) order by synonym_name;"
         ),
     ]
+    if required_object_grants:
+        owners = sorted({owner for _, owner, _ in required_object_grants})
+        tables = sorted({tbl for _, _, tbl in required_object_grants})
+        statements.append(
+            f"select '{prefix}_object_grant' as afs_section, privilege, owner, table_name "
+            f"from dba_tab_privs where grantee = '{working_user}' "
+            f"and owner in ({_sql_string_list(owners)}) "
+            f"and table_name in ({_sql_string_list(tables)}) "
+            "order by owner, table_name;"
+        )
+    return statements
 
 
 def _classify_admin_provisioning_result(
@@ -1582,7 +1616,14 @@ def _classify_admin_provisioning_result(
         }
 
     required_roles, required_sys_privileges = _admin_required_grants(grant_profile=grant_profile)
-    required_synonyms = set(SH_REQUIRED_TABLES) if grant_profile == "prototype-any-table-read" else set()
+    required_object_grants = _admin_required_object_grants(grant_profile=grant_profile)
+    required_synonyms = (
+        set(SH_REQUIRED_TABLES)
+        if grant_profile in ("prototype-any-table-read", "production-sh-read")
+        else set()
+    )
+    drift_roles_set = frozenset(_admin_drift_roles(grant_profile=grant_profile))
+    drift_sys_privileges_set = frozenset(_admin_drift_sys_privileges(grant_profile=grant_profile))
     sections = _admin_provisioning_sections(stdout)
     pre_state = _admin_account_state(
         sections=sections,
@@ -1590,6 +1631,9 @@ def _classify_admin_provisioning_result(
         required_roles=required_roles,
         required_sys_privileges=required_sys_privileges,
         required_synonyms=required_synonyms,
+        required_object_grants=required_object_grants,
+        drift_roles_set=drift_roles_set,
+        drift_sys_privileges_set=drift_sys_privileges_set,
     )
     post_state = _admin_account_state(
         sections=sections,
@@ -1597,6 +1641,9 @@ def _classify_admin_provisioning_result(
         required_roles=required_roles,
         required_sys_privileges=required_sys_privileges,
         required_synonyms=required_synonyms,
+        required_object_grants=required_object_grants,
+        drift_roles_set=drift_roles_set,
+        drift_sys_privileges_set=drift_sys_privileges_set,
     )
     active_prefix = "post" if post_state["observed"] else "pre"
     active_state = post_state if active_prefix == "post" else pre_state
@@ -1608,6 +1655,9 @@ def _classify_admin_provisioning_result(
             "roles": list(required_roles),
             "system_privileges": list(required_sys_privileges),
             "synonyms": sorted(required_synonyms),
+            "object_grants": sorted(
+                f"{priv}:ON:{owner}.{tbl}" for priv, owner, tbl in required_object_grants
+            ),
         },
     }
 
@@ -1703,11 +1753,19 @@ def _admin_account_state(
     required_roles: tuple[str, ...],
     required_sys_privileges: tuple[str, ...],
     required_synonyms: set[str],
+    required_object_grants: frozenset[tuple[str, str, str]] = frozenset(),
+    drift_roles_set: frozenset[str] | None = None,
+    drift_sys_privileges_set: frozenset[str] | None = None,
 ) -> dict[str, object]:
+    if drift_roles_set is None:
+        drift_roles_set = frozenset(ADMIN_PROVISION_DRIFT_ROLES)
+    if drift_sys_privileges_set is None:
+        drift_sys_privileges_set = frozenset(ADMIN_PROVISION_DRIFT_SYS_PRIVILEGES)
     user_rows = sections.get(f"{prefix}_user", [])
     role_rows = sections.get(f"{prefix}_role", [])
     sys_privilege_rows = sections.get(f"{prefix}_sys_privilege", [])
     synonym_rows = sections.get(f"{prefix}_synonym", [])
+    object_grant_rows = sections.get(f"{prefix}_object_grant", [])
     account_status = user_rows[0].get("account_status") if user_rows else None
     roles = {row.get("granted_role", "") for row in role_rows}
     sys_privileges = {row.get("privilege", "") for row in sys_privilege_rows}
@@ -1721,13 +1779,26 @@ def _admin_account_state(
             valid_synonyms.add(synonym_name)
         elif synonym_name in required_synonyms:
             drift_reasons.append(f"unexpected_synonym_target:{synonym_name}")
-    drift_roles = sorted(roles & set(ADMIN_PROVISION_DRIFT_ROLES))
-    drift_sys_privileges = sorted(sys_privileges & set(ADMIN_PROVISION_DRIFT_SYS_PRIVILEGES))
+    valid_object_grants: set[tuple[str, str, str]] = set()
+    for row in object_grant_rows:
+        privilege = row.get("privilege", "")
+        owner = row.get("owner", "")
+        table_name = row.get("table_name", "")
+        grant_tuple = (privilege, owner, table_name)
+        if grant_tuple in required_object_grants:
+            valid_object_grants.add(grant_tuple)
+    drift_roles = sorted(roles & drift_roles_set)
+    drift_sys_privileges = sorted(sys_privileges & drift_sys_privileges_set)
     drift_reasons.extend(f"unexpected_role:{role}" for role in drift_roles)
     drift_reasons.extend(f"unexpected_system_privilege:{privilege}" for privilege in drift_sys_privileges)
     missing_roles = sorted(set(required_roles) - roles)
     missing_sys_privileges = sorted(set(required_sys_privileges) - sys_privileges)
     missing_synonyms = sorted(required_synonyms - valid_synonyms)
+    missing_object_grants = sorted(
+        (priv, owner, tbl)
+        for priv, owner, tbl in required_object_grants
+        if (priv, owner, tbl) not in valid_object_grants
+    )
     exists = bool(user_rows)
     compliant = (
         exists
@@ -1735,17 +1806,20 @@ def _admin_account_state(
         and not missing_roles
         and not missing_sys_privileges
         and not missing_synonyms
+        and not missing_object_grants
     )
     return {
-        "observed": bool(user_rows or role_rows or sys_privilege_rows or synonym_rows),
+        "observed": bool(user_rows or role_rows or sys_privilege_rows or synonym_rows or object_grant_rows),
         "exists": exists,
         "account_status": account_status,
         "roles": sorted(roles),
         "system_privileges": sorted(sys_privileges),
         "synonyms": sorted(valid_synonyms),
+        "object_grants": sorted(f"{priv}:ON:{owner}.{tbl}" for priv, owner, tbl in valid_object_grants),
         "missing_roles": missing_roles,
         "missing_system_privileges": missing_sys_privileges,
         "missing_synonyms": missing_synonyms,
+        "missing_object_grants": missing_object_grants,
         "drift_reasons": drift_reasons,
         "compliant": compliant,
     }
@@ -1818,6 +1892,31 @@ def _safe_oracle_identifier(value: str) -> str:
     return upper
 
 
+def _admin_required_object_grants(
+    *,
+    grant_profile: str,
+) -> frozenset[tuple[str, str, str]]:
+    """Returns frozenset of (privilege, owner, table_name) tuples required by profile."""
+    if grant_profile == "production-sh-read":
+        return frozenset(
+            ("SELECT", "SH", table_name)
+            for table_name in SH_REQUIRED_TABLES
+        )
+    return frozenset()
+
+
+def _admin_drift_roles(*, grant_profile: str) -> tuple[str, ...]:
+    if grant_profile == "production-sh-read":
+        return (*ADMIN_PROVISION_DRIFT_ROLES, *ADMIN_PRODUCTION_DRIFT_EXTRA_ROLES)
+    return ADMIN_PROVISION_DRIFT_ROLES
+
+
+def _admin_drift_sys_privileges(*, grant_profile: str) -> tuple[str, ...]:
+    if grant_profile == "production-sh-read":
+        return (*ADMIN_PROVISION_DRIFT_SYS_PRIVILEGES, *ADMIN_PRODUCTION_DRIFT_EXTRA_SYS_PRIVILEGES)
+    return ADMIN_PROVISION_DRIFT_SYS_PRIVILEGES
+
+
 def _admin_requested_privileges(
     *,
     grant_profile: str,
@@ -1826,6 +1925,9 @@ def _admin_requested_privileges(
     if grant_profile == "prototype-any-table-read":
         privileges.append("DWROLE")
         privileges.append("SELECT ANY TABLE")
+    elif grant_profile == "production-sh-read":
+        for table_name in sorted(SH_REQUIRED_TABLES):
+            privileges.append(f"SELECT ON SH.{table_name}")
     return privileges
 
 

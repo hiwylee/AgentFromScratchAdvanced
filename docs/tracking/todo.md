@@ -255,3 +255,11 @@ Acceptance criteria:
 - `[x]` P11: Human Gate real interrupt — `make_cli_approval_callback()` with stdin prompt + timeout.
 - `[x]` P11: Context compression/retrieval — `compress_history()` + session_ctx wired into AgentLoop.
 - `[x]` P11: LLM-based semantic self-evaluation — `SelfEvaluator(llm_critic=callable)` with graceful fallback.
+
+## Active Work (2026-05-29)
+
+- `[x]` CP1: Production DB permission hardening — `production-sh-read` profile with object-level SELECT grants + drift detection for SELECT ANY TABLE / DWROLE.
+- `[ ]` CP2: Schema Registry 인프라 — artifact-manifest schema_profiles, hardcoding cleanup in tools.py/loop.py/oracle_adw.py/cli.py.
+- `[ ]` CP3: SSB 아티팩트 + M7 해시/리뷰어 신원 — SSB schema-metadata/curated-seed, QUERY_PATTERN_REGISTRY, content_hash on candidates, ReviewRecord type.
+- `[ ]` CP4: M7 Rollback 설계 + review-candidate CLI 확장.
+- `[ ]` CP5: Milestone 8 — adw_query ToolSpec(risk_level=high), AgentLoop approval_callback, --allow-real-query CLI.
