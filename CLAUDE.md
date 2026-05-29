@@ -7,7 +7,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ```
 AgentFromScratchAdvanced/
   agent_runtime/   # Python backend — agent loop, tools, workflow engine
-  tests/           # Python test suite (541 tests)
+  tests/           # Python test suite (559 tests)
   bin/             # CLI entrypoint (bin/agent)
   artifacts/       # Versioned schemas, evals, prompts, policies
   frontend/        # Next.js 14 UI — chat, audit, workflow, schema pages
@@ -20,8 +20,11 @@ AgentFromScratchAdvanced/
 ### Backend (Python)
 
 ```bash
-# Run a user request
+# Run a user request (mock mode — no real DB execution)
 bin/agent ask "지난달 상품별 매출 추이를 보여줘" --run-dir /tmp/afs-runs --audit-log /tmp/afs.jsonl
+
+# Run with real ADW query execution (operator flag — requires .env credentials)
+bin/agent ask "지난달 상품별 매출 추이를 보여줘" --allow-real-query --run-dir /tmp/afs-runs --audit-log /tmp/afs.jsonl
 
 # Check latest run status
 bin/agent status --run-dir /tmp/afs-runs
@@ -44,6 +47,17 @@ UV_CACHE_DIR=.uv-cache uv run --python 3.13 python -m unittest tests.test_tools
 bin/agent operator adw-smoke --confirm-live-adw-smoke
 bin/agent operator adw-query --sql "select count(*) from sales" --confirm-live-adw-query
 bin/agent operator adw-provision-working-user --grant-profile prototype-any-table-read --confirm-live-adw-admin-provision
+bin/agent operator adw-provision-working-user --grant-profile production-sh-read --confirm-live-adw-admin-provision
+
+# Self-evolution candidate recording and review
+bin/agent operator propose-improvement --candidate-id <id> --candidate-type prompt \
+  --trigger-type eval_failure --summary "..." --proposed-change "..." \
+  --affected-artifact artifacts/prompts/x.md prompt 1 2 --source-id run-id --author bot
+bin/agent operator review-candidate list --candidates-dir artifacts/improvement-candidates
+bin/agent operator review-candidate list --status pending --candidates-dir artifacts/improvement-candidates
+bin/agent operator review-candidate show --candidate-id <id>
+bin/agent operator review-candidate approve --candidate-id <id> --reviewer "reviewer-name"
+bin/agent operator review-candidate reject  --candidate-id <id> --reviewer "reviewer-name" --notes "reason"
 ```
 
 ### Frontend (Next.js)

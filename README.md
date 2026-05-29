@@ -2,7 +2,7 @@
 
 A production-quality agent runtime with a Next.js web UI. Built from scratch with intent-first architecture, capability-tagged planning, human-gate verification, tacit knowledge capture, and Oracle ADW natural-language data access — all with append-only audit, secret redaction, and self-evolution controls closed by default.
 
-**541 tests passing.**
+**559 tests passing.**
 
 ---
 
@@ -11,7 +11,7 @@ A production-quality agent runtime with a Next.js web UI. Built from scratch wit
 ```
 AgentFromScratchAdvanced/
   agent_runtime/     # Python backend — agent loop, tools, workflow, tacit knowledge
-  tests/             # Python test suite (541 tests)
+  tests/             # Python test suite (559 tests)
   bin/               # CLI entrypoint (bin/agent)
   artifacts/         # Versioned schemas, evals, prompts, policies, verification episodes
   frontend/          # Next.js 14 UI — chat, audit, workflow, schema, memory pages
@@ -93,6 +93,10 @@ frontend/
 # Natural-language query (mock mode default)
 bin/agent ask "지난달 상품별 매출 추이를 보여줘" --run-dir /tmp/afs-runs --audit-log /tmp/afs.jsonl
 
+# With real ADW query execution (operator flag — enables real Oracle ADW execution via adw_query tool;
+# requires .env credentials and SQLcl)
+bin/agent ask "지난달 상품별 매출 추이를 보여줘" --allow-real-query --run-dir /tmp/afs-runs --audit-log /tmp/afs.jsonl
+
 # With a live LLM provider
 bin/agent ask "채널별 매출 비교해줘" --model-provider openai --run-dir /tmp/afs-runs
 bin/agent ask "채널별 매출 비교해줘" --model-provider oci   --run-dir /tmp/afs-runs
@@ -123,6 +127,7 @@ bin/agent tacit heuristics
 bin/agent operator adw-smoke --confirm-live-adw-smoke
 bin/agent operator adw-query --sql "select count(*) from sales" --confirm-live-adw-query
 bin/agent operator adw-provision-working-user --grant-profile prototype-any-table-read --confirm-live-adw-admin-provision
+bin/agent operator adw-provision-working-user --grant-profile production-sh-read --confirm-live-adw-admin-provision
 
 # Self-evolution improvement candidates (operator-only, never auto-applied)
 bin/agent operator propose-improvement --candidate-id <id> --candidate-type prompt \
@@ -130,6 +135,7 @@ bin/agent operator propose-improvement --candidate-id <id> --candidate-type prom
   --affected-artifact artifacts/prompts/... --source-type manual --source-id reviewer
 
 bin/agent operator review-candidate list --candidates-dir artifacts/improvement-candidates
+bin/agent operator review-candidate list --status pending --candidates-dir artifacts/improvement-candidates
 bin/agent operator review-candidate approve --candidate-id <id> --reviewer <name>
 bin/agent operator review-candidate reject  --candidate-id <id> --reviewer <name> --notes "..."
 
@@ -236,7 +242,7 @@ Credentials are read from `.env` (git-ignored). The working DB user is `AIAGENT`
 |---|---|
 | `frontend/` | Next.js 14 UI (app router, API routes, components, lib) |
 | `agent_runtime/` | Python backend runtime (29 modules) |
-| `tests/` | Unit and integration tests (541 passing) |
+| `tests/` | Unit and integration tests (559 passing) |
 | `bin/` | CLI entry point (`bin/agent`) |
 | `artifacts/schemas/` | JSON Schema files for all artifact types |
 | `artifacts/evals/golden/` | Frozen golden eval fixtures (do not hand-edit) |
