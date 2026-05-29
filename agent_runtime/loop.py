@@ -550,9 +550,10 @@ def _build_query_plan(user_text: str, *, intent_data: dict | None = None) -> Que
 def _real_execution_answer(real_expl: object, query_plan: QueryPlanArtifact | None) -> FinalAnswer:
     """Build a FinalAnswer that surfaces actual ADW query rows."""
     from .result_explanation import ResultExplanationArtifact
-    assert isinstance(real_expl, ResultExplanationArtifact)
+    if not isinstance(real_expl, ResultExplanationArtifact):
+        raise TypeError(f"real_expl must be ResultExplanationArtifact, got {type(real_expl).__name__}")
     rows = list(real_expl.rows[:5])
-    row_count = real_expl.row_count
+    db_row_count = real_expl.row_count
     lines = [real_expl.summary]
     if rows:
         header = " | ".join(real_expl.columns)
@@ -560,8 +561,8 @@ def _real_execution_answer(real_expl: object, query_plan: QueryPlanArtifact | No
         lines.append("-" * len(header))
         for row in rows:
             lines.append(" | ".join(str(row.get(c, "")) for c in real_expl.columns))
-        if row_count > len(rows):
-            lines.append(f"... ({row_count - len(rows)} more rows)")
+        if db_row_count > len(rows):
+            lines.append(f"... ({db_row_count - len(rows)} more rows in database)")
     content = "\n".join(lines)
     assumptions = list(query_plan.assumptions) if query_plan else []
     assumptions.append("Results are from real Oracle ADW execution via SQLcl read-only adapter.")

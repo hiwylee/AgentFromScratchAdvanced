@@ -237,6 +237,28 @@ def build_real_result_explanation(
     if rows:
         columns = list(rows[0].keys())
 
+    # Guard: row_count > 0 but rows is empty → inconsistent state; reject
+    if status_val == "succeeded" and real_db and row_count > 0 and not rows:
+        return ResultExplanationArtifact(
+            schema_version="agent-runtime.result-explanation.v1",
+            query_plan_schema_version=query_plan.schema_version,
+            profile_id=query_plan.profile_id,
+            status="rejected",
+            source="real/oracle_adw",
+            real_database_execution=real_db,
+            sql_execution_backend=backend,
+            request_text=query_plan.request_text,
+            proposed_sql=query_plan.proposed_sql or "",
+            adapter_response_metadata={"backend": backend, "status": status_val, "row_count": row_count},
+            columns=(),
+            rows=(),
+            row_count=0,
+            summary="Real ADW execution reported rows but returned no row data.",
+            explanation="",
+            query_plan=query_plan.to_dict(),
+            refusal_reason="row_data_missing_despite_row_count",
+        )
+
     if not real_db or status_val != "succeeded":
         return ResultExplanationArtifact(
             schema_version=result_schema_version,

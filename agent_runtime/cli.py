@@ -1626,8 +1626,8 @@ def _classify_admin_provisioning_result(
             "state": {
                 "reason": "existing_user_has_privileges_outside_selected_profile",
                 "drift_policy": {
-                    "roles": list(ADMIN_PROVISION_DRIFT_ROLES),
-                    "system_privileges": list(ADMIN_PROVISION_DRIFT_SYS_PRIVILEGES),
+                    "roles": list(_admin_drift_roles(grant_profile=grant_profile)),
+                    "system_privileges": list(_admin_drift_sys_privileges(grant_profile=grant_profile)),
                 },
             },
         }

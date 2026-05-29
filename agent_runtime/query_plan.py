@@ -16,12 +16,10 @@ QUERY_PLAN_SCHEMA_VERSION = "agent-runtime.query-plan.v1"
 
 QueryPlanStatus = Literal["planned", "clarification_required", "blocked"]
 
-_SH_PROFILE_PREFIX = "oracle_adw_sh"
-
-QUERY_PATTERN_REGISTRY: dict[str, bool] = {
-    "oracle_adw_sh.v1": True,
-    # oracle_adw_ssb.v1: no patterns implemented yet
-}
+QUERY_PATTERN_REGISTRY: frozenset[str] = frozenset({
+    "oracle_adw_sh.v1",
+    # oracle_adw_ssb.v1: patterns not yet implemented
+})
 
 
 @dataclass(frozen=True)
