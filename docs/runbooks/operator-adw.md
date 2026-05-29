@@ -80,6 +80,24 @@ WHERE grantee = 'AIAGENT'
 ORDER BY owner, table_name;
 ```
 
+**Oracle ADW constraint**: the `ADMIN` account in Oracle Autonomous Database
+does not hold `GRANT ANY OBJECT PRIVILEGE`, so `GRANT SELECT ON SH.* TO AIAGENT`
+fails with `ORA-01031`. To apply `production-sh-read` in ADW you must either:
+
+1. Connect as the `SH` schema owner and grant directly:
+   ```sql
+   GRANT SELECT ON SH.CHANNELS TO AIAGENT;
+   GRANT SELECT ON SH.CUSTOMERS TO AIAGENT;
+   GRANT SELECT ON SH.PRODUCTS  TO AIAGENT;
+   GRANT SELECT ON SH.SALES     TO AIAGENT;
+   GRANT SELECT ON SH.TIMES     TO AIAGENT;
+   ```
+2. Create ADMIN-owned views that select from SH tables and grant SELECT on
+   those views — keeping AIAGENT away from the SH schema directly.
+
+Until one of the above is applied, AIAGENT continues to use the broader
+`prototype-any-table-read` grants (`SELECT ANY TABLE` + `DWROLE`).
+
 ## Smoke Check
 
 After provisioning, run the fixed smoke query:

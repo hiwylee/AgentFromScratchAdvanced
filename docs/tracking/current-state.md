@@ -360,15 +360,34 @@ Closed gaps identified by 12-principle Agentic Engineering review:
 
 ## Next Action
 
-M7 hardening is complete (2026-05-24). P1–P11 + M7 of the general agent design
-are done on branch `claude/general` (493 tests passing).
+CP1–CP5 + M8 live smoke complete (2026-05-29). 555 tests passing.
 
-Next focus options:
+### Completed in CP1–CP5 wave (2026-05-29)
 
-- **PR #1 merge** (`claude/general` → `main`): all tests pass; merge when ready.
-- **Milestone 8**: real database tool integration or external API tool.
-- **Production hardening**: replace prototype `SELECT ANY TABLE` grant with
-  narrower object-level grants for `AIAGENT`.
+- **CP1**: `production-sh-read` grant profile with object-level `GRANT SELECT ON SH.*`
+  code implemented; live ADW apply blocked — ADW `ADMIN` lacks `GRANT ANY OBJECT PRIVILEGE`
+  on SH tables (see Known Constraints below).
+- **CP2**: Schema Registry — `artifact-manifest.v1.json` driven path lookup; `SCHEMA_REQUIRED_TABLES` dict.
+- **CP3**: SSB schema artifacts (documented), `QUERY_PATTERN_REGISTRY`, `ReviewRecord`, hash tamper detection in gate.
+- **CP4**: `RollbackExecutor` (dry_run only), `approve_candidate`/`reject_candidate`, `review-candidate --status`.
+- **CP5**: `adw_query` ToolSpec (risk_level=high), `AgentLoop.allow_real_query`, `--allow-real-query` CLI.
+  - **M8 live smoke verified**: `bin/agent ask "지난달 상품별 매출 추이를 보여줘" --allow-real-query` → 240 rows from real ADW.
+
+### Known Constraints
+
+- **ADW GRANT ANY OBJECT PRIVILEGE**: `ADMIN` in Oracle ADW cannot grant `SELECT ON SH.*`
+  to AIAGENT directly (`ORA-01031`). `production-sh-read` profile requires either
+  SH schema owner credentials or SYS access. Current AIAGENT operates with prototype
+  `SELECT ANY TABLE` + `DWROLE` grants until resolved.
+
+### Next focus options
+
+- **ADW GRANT workaround**: obtain SH user credentials to apply object-level grants,
+  or use ADMIN-owned views as a proxy.
+- **Milestone 9**: real ADW query result explanation (replace fake/deterministic rows
+  with actual ADW rows in result-explanation artifacts).
+- **M8 final_answer wiring**: surface actual ADW rows in the agent's final answer text
+  (currently rows appear in observation only).
 
 Persistent workflow approval/resume and real target-system writes must remain
 closed until signed or hashed checkpoint persistence, approval authorization,
@@ -456,7 +475,18 @@ bin/agent status --run-dir /tmp/afs-runs-2
 bin/agent status --run-dir /tmp/afs-workflow-intent2
 ```
 
-Latest full test run (2026-05-24, after M7 hardening): **493 tests passed**.
+Latest full test run (2026-05-29, after CP1–CP5 + M8 fix): **555 tests passed**.
+
+```bash
+uv run --python 3.13 python -m pytest -q
+# → 555 passed, 109 subtests passed
+bin/agent operator adw-smoke --confirm-live-adw-smoke   # smoke_check=1 ✓
+bin/agent ask "지난달 상품별 매출 추이를 보여줘" --allow-real-query \
+  --model-provider mock --run-dir /tmp/afs-m8-smoke2
+# adw_query: 240 rows, real_database_execution=true ✓
+```
+
+Previous baseline (2026-05-24, after M7 hardening): 493 tests passed.
 
 ```bash
 uv run --python 3.13 python -m pytest -q

@@ -5,6 +5,11 @@ direction and implementation changes, not every tiny edit.
 
 ## 2026-05-29
 
+- **M8 bug fix**: `SqlclReadOnlyAdapter` in `_handle_adw_query` was passing `settings`
+  as a positional argument but the constructor requires it as keyword-only (after `*`).
+  Fixed to `settings=settings`. Live smoke confirmed: `adw_query` returns 240 rows
+  from real Oracle ADW.
+
 - **Phase 5 (CP5) — Milestone 8: real ADW query tool**: `adw_query` ToolSpec
   with `risk_level="high"`, `read_only=True` registered in `default_tool_registry()`.
   `_handle_adw_query` handler validates SQL policy → loads `OracleAdwConfig` →
