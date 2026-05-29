@@ -373,17 +373,18 @@ CP1–CP5 + M8 live smoke complete (2026-05-29). 555 tests passing.
 - **CP5**: `adw_query` ToolSpec (risk_level=high), `AgentLoop.allow_real_query`, `--allow-real-query` CLI.
   - **M8 live smoke verified**: `bin/agent ask "지난달 상품별 매출 추이를 보여줘" --allow-real-query` → 240 rows from real ADW.
 
-### Known Constraints
+### Known Constraints (resolved 2026-05-29)
 
-- **ADW GRANT ANY OBJECT PRIVILEGE**: `ADMIN` in Oracle ADW cannot grant `SELECT ON SH.*`
-  to AIAGENT directly (`ORA-01031`). `production-sh-read` profile requires either
-  SH schema owner credentials or SYS access. Current AIAGENT operates with prototype
-  `SELECT ANY TABLE` + `DWROLE` grants until resolved.
+- **ADW GRANT workaround applied**: `ADMIN` cannot `GRANT SELECT ON SH.*` directly
+  (`ORA-01031`). Resolved by creating ADMIN-owned views (`ADMIN.SH_{TABLE}_V`) and
+  granting SELECT on those to AIAGENT. AIAGENT synonyms updated to point to ADMIN views.
+  `SELECT ANY TABLE` + `DWROLE` revoked. AIAGENT now holds only `CREATE SESSION` +
+  5 view-level SELECTs. M8 re-verified: 240 rows, `real_database_execution=true`.
 
 ### Next focus options
 
-- **ADW GRANT workaround**: obtain SH user credentials to apply object-level grants,
-  or use ADMIN-owned views as a proxy.
+- **Milestone 9**: real ADW result explanation (replace fake/deterministic rows with
+  actual ADW rows in result-explanation artifacts).
 - **Milestone 9**: real ADW query result explanation (replace fake/deterministic rows
   with actual ADW rows in result-explanation artifacts).
 - **M8 final_answer wiring**: surface actual ADW rows in the agent's final answer text

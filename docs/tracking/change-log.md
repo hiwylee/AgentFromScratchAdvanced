@@ -5,6 +5,14 @@ direction and implementation changes, not every tiny edit.
 
 ## 2026-05-29
 
+- **Production DB GRANT workaround (ADW)**: Since Oracle ADW `ADMIN` lacks
+  `GRANT ANY OBJECT PRIVILEGE`, applied object-level access via ADMIN-owned views:
+  `ADMIN.SH_CHANNELS_V`, `SH_CUSTOMERS_V`, `SH_PRODUCTS_V`, `SH_SALES_V`, `SH_TIMES_V`
+  each created as `SELECT * FROM SH.*` and `GRANT SELECT ON` to AIAGENT.
+  AIAGENT synonyms updated to point to ADMIN views. `SELECT ANY TABLE` and `DWROLE`
+  revoked. AIAGENT now has only `CREATE SESSION` + 5 view SELECTs.
+  M8 re-verified: `adw_query` returns 240 rows, `real_database_execution=true`.
+
 - **M8 bug fix**: `SqlclReadOnlyAdapter` in `_handle_adw_query` was passing `settings`
   as a positional argument but the constructor requires it as keyword-only (after `*`).
   Fixed to `settings=settings`. Live smoke confirmed: `adw_query` returns 240 rows
