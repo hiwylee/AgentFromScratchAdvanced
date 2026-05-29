@@ -217,8 +217,108 @@ def _response_snapshot(response: SqlExecutionResponse) -> dict[str, object]:
     }
 
 
+def build_real_result_explanation(
+    query_plan: QueryPlanArtifact,
+    *,
+    adw_output: dict[str, Any],
+) -> ResultExplanationArtifact:
+    """Build a result explanation from actual ADW query output.
+
+    adw_output is the output dict from _handle_adw_query in tools.py.
+    Does not require FakeSqlExecutionAdapter.
+    """
+    result_schema_version = "agent-runtime.result-explanation.v1"
+    status_val = str(adw_output.get("status") or "")
+    real_db = bool(adw_output.get("real_database_execution"))
+    backend = str(adw_output.get("backend") or "sqlcl")
+    row_count = int(adw_output.get("row_count") or 0)
+    rows = list(adw_output.get("rows") or [])
+    columns: list[str] = []
+    if rows:
+        columns = list(rows[0].keys())
+
+    if not real_db or status_val != "succeeded":
+        return ResultExplanationArtifact(
+            schema_version=result_schema_version,
+            query_plan_schema_version=query_plan.schema_version,
+            profile_id=query_plan.profile_id,
+            status="rejected",
+            source="real/oracle_adw",
+            real_database_execution=real_db,
+            sql_execution_backend=backend,
+            request_text=query_plan.request_text,
+            proposed_sql=query_plan.proposed_sql or "",
+            adapter_response_metadata={
+                "backend": backend,
+                "status": status_val,
+                "real_database_execution": real_db,
+            },
+            columns=tuple(columns),
+            rows=tuple(dict(r) for r in rows),
+            row_count=row_count,
+            summary="Real ADW execution did not return a successful result.",
+            explanation="",
+            query_plan=query_plan.to_dict(),
+            refusal_reason=f"adw_query status={status_val!r}",
+        )
+
+    # Build summary from actual rows
+    summary_parts = [
+        f"Query returned {row_count} row(s) from Oracle ADW (real execution).",
+    ]
+    if columns:
+        summary_parts.append(f"Columns: {', '.join(columns)}.")
+    if rows:
+        sample = rows[0]
+        sample_text = ", ".join(f"{k}={v}" for k, v in list(sample.items())[:3])
+        summary_parts.append(f"First row: {sample_text}.")
+
+    explanation_lines = [
+        "This result was produced by executing the proposed SQL against Oracle ADW.",
+        "The data reflects actual database contents at query time.",
+        "Source: real Oracle ADW execution via SQLcl read-only adapter.",
+        f"Row count: {row_count}.",
+    ]
+    if row_count >= 10:
+        explanation_lines.append(
+            "Note: rows are bounded to the first 10 for this explanation."
+        )
+
+    return ResultExplanationArtifact(
+        schema_version=result_schema_version,
+        query_plan_schema_version=query_plan.schema_version,
+        profile_id=query_plan.profile_id,
+        status="succeeded",
+        source="real/oracle_adw",
+        real_database_execution=True,
+        sql_execution_backend=backend,
+        request_text=query_plan.request_text,
+        proposed_sql=query_plan.proposed_sql or "",
+        adapter_response_metadata={
+            "backend": backend,
+            "oracle_adw_execution": adw_output.get("oracle_adw_execution", True),
+            "sqlcl_execution": adw_output.get("sqlcl_execution", True),
+            "query_plan_id": adw_output.get("query_plan_id", ""),
+            "row_count": row_count,
+            "real_database_execution": True,
+        },
+        columns=tuple(columns),
+        rows=tuple(dict(r) for r in rows),
+        row_count=row_count,
+        summary=" ".join(summary_parts),
+        explanation=" ".join(explanation_lines),
+        query_plan=query_plan.to_dict(),
+        execution_response={
+            "status": status_val,
+            "backend": backend,
+            "real_database_execution": True,
+        },
+    )
+
+
 __all__ = [
     "RESULT_EXPLANATION_SCHEMA_VERSION",
     "ResultExplanationArtifact",
     "build_fake_result_explanation",
+    "build_real_result_explanation",
 ]

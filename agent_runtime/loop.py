@@ -266,6 +266,24 @@ class AgentLoop:
                 action_steps_used += 1
                 monitor.event("adw_query_executed", {"result": adw_tool_result.to_dict()})
                 self._audit(run_id, "adw_query_executed", {"result": adw_tool_result.to_dict()})
+                # Milestone 9: build real result explanation from actual ADW rows
+                if adw_tool_result.state == "completed" and query_plan is not None:
+                    from .result_explanation import build_real_result_explanation
+                    try:
+                        real_expl = build_real_result_explanation(
+                            query_plan, adw_output=adw_tool_result.output
+                        )
+                        monitor.event(
+                            "real_result_explanation_built",
+                            {"result_explanation": real_expl.to_dict()},
+                        )
+                        self._audit(
+                            run_id,
+                            "real_result_explanation_built",
+                            {"result_explanation": real_expl.to_dict()},
+                        )
+                    except Exception:
+                        pass  # never block answer delivery on explanation failure
                 # Merge adw result into observation
                 observation = Observation(
                     source=f"tool:{tool_result.tool_name}+adw_query",

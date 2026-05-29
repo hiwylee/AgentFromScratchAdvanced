@@ -173,5 +173,92 @@ def _planned_query_plan() -> QueryPlanArtifact:
     )
 
 
+class RealResultExplanationTests(unittest.TestCase):
+    def _make_plan(self, status="planned"):
+        from agent_runtime.query_plan import QueryPlanArtifact
+        return QueryPlanArtifact(
+            schema_version="agent-runtime.query-plan.v1",
+            profile_id="oracle_adw_sh.v1",
+            status=status,
+            request_text="지난달 상품별 매출",
+            selected_table_ids=("SH.SALES", "SH.PRODUCTS", "SH.TIMES"),
+            proposed_sql="SELECT t.CALENDAR_MONTH_DESC, p.PROD_CATEGORY, SUM(s.AMOUNT_SOLD) AS revenue FROM SALES s JOIN PRODUCTS p ON s.PROD_ID=p.PROD_ID JOIN TIMES t ON s.TIME_ID=t.TIME_ID GROUP BY t.CALENDAR_MONTH_DESC, p.PROD_CATEGORY ORDER BY 1,2",
+            policy_validation={"allowed": True, "code": "allowed", "reason": ""},
+            assumptions=("Revenue = AMOUNT_SOLD",),
+        )
+
+    def test_build_real_result_explanation_succeeded(self):
+        from agent_runtime.result_explanation import build_real_result_explanation
+        adw_output = {
+            "status": "succeeded",
+            "real_database_execution": True,
+            "backend": "sqlcl",
+            "row_count": 3,
+            "rows": [
+                {"month": "1998-01", "product_category": "Electronics", "revenue": 151647.15},
+                {"month": "1998-01", "product_category": "Hardware", "revenue": 641850.31},
+                {"month": "1998-02", "product_category": "Electronics", "revenue": 182300.0},
+            ],
+            "oracle_adw_execution": True,
+            "sqlcl_execution": True,
+        }
+        plan = self._make_plan()
+        result = build_real_result_explanation(plan, adw_output=adw_output)
+        self.assertEqual("succeeded", result.status)
+        self.assertEqual("real/oracle_adw", result.source)
+        self.assertTrue(result.real_database_execution)
+        self.assertEqual("sqlcl", result.sql_execution_backend)
+        self.assertEqual(3, result.row_count)
+        self.assertEqual(("month", "product_category", "revenue"), result.columns)
+        self.assertIn("3 row(s)", result.summary)
+        self.assertIn("real Oracle ADW", result.explanation)
+
+    def test_build_real_result_explanation_rejected_on_failed_status(self):
+        from agent_runtime.result_explanation import build_real_result_explanation
+        adw_output = {
+            "status": "failed",
+            "real_database_execution": True,
+            "backend": "sqlcl",
+            "row_count": 0,
+            "rows": [],
+        }
+        plan = self._make_plan()
+        result = build_real_result_explanation(plan, adw_output=adw_output)
+        self.assertEqual("rejected", result.status)
+        self.assertEqual("real/oracle_adw", result.source)
+        self.assertIsNotNone(result.refusal_reason)
+
+    def test_build_real_result_explanation_rejected_on_non_real(self):
+        from agent_runtime.result_explanation import build_real_result_explanation
+        adw_output = {
+            "status": "succeeded",
+            "real_database_execution": False,
+            "backend": "fake",
+            "row_count": 0,
+            "rows": [],
+        }
+        plan = self._make_plan()
+        result = build_real_result_explanation(plan, adw_output=adw_output)
+        self.assertEqual("rejected", result.status)
+
+    def test_real_explanation_has_no_fake_markers(self):
+        from agent_runtime.result_explanation import build_real_result_explanation
+        adw_output = {
+            "status": "succeeded",
+            "real_database_execution": True,
+            "backend": "sqlcl",
+            "row_count": 1,
+            "rows": [{"month": "1998-01", "revenue": 100.0}],
+        }
+        plan = self._make_plan()
+        result = build_real_result_explanation(plan, adw_output=adw_output)
+        d = result.to_dict()
+        import json
+        text = json.dumps(d)
+        self.assertNotIn("fake/deterministic", text)
+        self.assertNotIn("fixture_id", text)
+        self.assertNotIn("scenario_id", text)
+
+
 if __name__ == "__main__":
     unittest.main()
