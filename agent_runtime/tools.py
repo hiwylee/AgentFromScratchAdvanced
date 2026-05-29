@@ -199,7 +199,7 @@ def _handle_adw_query(args: dict[str, Any]) -> dict[str, Any]:
             "real_database_execution": False,
         }
     settings = SqlclReadOnlyExecutionSettings()
-    adapter = SqlclReadOnlyAdapter(config, settings, allow_real_execution=True)
+    adapter = SqlclReadOnlyAdapter(config, settings=settings, allow_real_execution=True)
     request = SqlExecutionRequest(
         sql=sql,
         purpose="adw_query_tool",
