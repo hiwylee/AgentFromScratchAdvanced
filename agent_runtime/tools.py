@@ -207,11 +207,11 @@ def _handle_adw_query(args: dict[str, Any]) -> dict[str, Any]:
     )
     try:
         response = adapter.execute(request)
-    except Exception as exc:
+    except Exception:
         return {
             "status": "execution_error",
             "error_code": "adapter_exception",
-            "error": f"ADW adapter raised: {type(exc).__name__}",
+            "error": "ADW query execution failed unexpectedly.",
             "real_database_execution": True,
         }
     result: dict[str, Any] = {

@@ -1424,8 +1424,9 @@ def _run_admin_provision_sqlcl(
     missing_sys_privileges = tuple(str(value) for value in pre_state.get("missing_system_privileges", ()))
     missing_synonyms = tuple(str(value) for value in pre_state.get("missing_synonyms", ()))
     missing_object_grants = [
-        (str(p), str(o), str(t))
-        for p, o, t in pre_state.get("missing_object_grants", [])
+        (str(item[0]), str(item[1]), str(item[2]))
+        for item in pre_state.get("missing_object_grants", [])
+        if isinstance(item, (list, tuple)) and len(item) == 3
     ]
     user_exists = bool(pre_state.get("exists"))
     account_status = pre_state.get("account_status")

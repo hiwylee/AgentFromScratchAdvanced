@@ -268,7 +268,6 @@ class AgentLoop:
                 monitor.event("adw_query_executed", {"result": adw_tool_result.to_dict()})
                 self._audit(run_id, "adw_query_executed", {"result": adw_tool_result.to_dict()})
                 # Milestone 9: build real result explanation from actual ADW rows
-                real_expl = None
                 if adw_tool_result.state == "completed" and query_plan is not None:
                     from .result_explanation import build_real_result_explanation
                     try:
@@ -577,7 +576,7 @@ def _final_answer(
     action: Action,
     *,
     query_plan: QueryPlanArtifact | None = None,
-    real_explanation: object = None,
+    real_explanation: "ResultExplanationArtifact | None" = None,
 ) -> FinalAnswer:
     from .result_explanation import ResultExplanationArtifact
     real_expl = real_explanation if isinstance(real_explanation, ResultExplanationArtifact) else None
