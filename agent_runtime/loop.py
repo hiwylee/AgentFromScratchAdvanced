@@ -214,6 +214,7 @@ class AgentLoop:
 
         tool_call = _tool_call_for_action(action, user_text=user_text, registry=self.tool_registry, intent_data=intent_data)
         query_plan: QueryPlanArtifact | None = None
+        real_expl = None
         if tool_call is not None:
             stopped = self._stop_state(started, action_steps_used, token, check_max_steps=True)
             if stopped is not None:
@@ -267,6 +268,7 @@ class AgentLoop:
                 monitor.event("adw_query_executed", {"result": adw_tool_result.to_dict()})
                 self._audit(run_id, "adw_query_executed", {"result": adw_tool_result.to_dict()})
                 # Milestone 9: build real result explanation from actual ADW rows
+                real_expl = None
                 if adw_tool_result.state == "completed" and query_plan is not None:
                     from .result_explanation import build_real_result_explanation
                     try:
@@ -283,7 +285,7 @@ class AgentLoop:
                             {"result_explanation": real_expl.to_dict()},
                         )
                     except Exception:
-                        pass  # never block answer delivery on explanation failure
+                        real_expl = None  # never block answer delivery on explanation failure
                 # Merge adw result into observation
                 observation = Observation(
                     source=f"tool:{tool_result.tool_name}+adw_query",
@@ -307,7 +309,7 @@ class AgentLoop:
             state, reason = stopped
             return self._finish_stopped(monitor, intent_data, action, state, reason)
 
-        final = _final_answer(action, query_plan=query_plan)
+        final = _final_answer(action, query_plan=query_plan, real_explanation=real_expl)
 
         # Evaluate answer quality (deterministic, no LLM).
         _eval_result: dict[str, object] | None = None
@@ -545,7 +547,40 @@ def _build_query_plan(user_text: str, *, intent_data: dict | None = None) -> Que
         return None
 
 
-def _final_answer(action: Action, *, query_plan: QueryPlanArtifact | None = None) -> FinalAnswer:
+def _real_execution_answer(real_expl: object, query_plan: QueryPlanArtifact | None) -> FinalAnswer:
+    """Build a FinalAnswer that surfaces actual ADW query rows."""
+    from .result_explanation import ResultExplanationArtifact
+    assert isinstance(real_expl, ResultExplanationArtifact)
+    rows = list(real_expl.rows[:5])
+    row_count = real_expl.row_count
+    lines = [real_expl.summary]
+    if rows:
+        header = " | ".join(real_expl.columns)
+        lines.append(f"\n{header}")
+        lines.append("-" * len(header))
+        for row in rows:
+            lines.append(" | ".join(str(row.get(c, "")) for c in real_expl.columns))
+        if row_count > len(rows):
+            lines.append(f"... ({row_count - len(rows)} more rows)")
+    content = "\n".join(lines)
+    assumptions = list(query_plan.assumptions) if query_plan else []
+    assumptions.append("Results are from real Oracle ADW execution via SQLcl read-only adapter.")
+    return FinalAnswer(
+        content=content,
+        assumptions=assumptions,
+        next_action="Results reflect actual database contents at query time.",
+    )
+
+
+def _final_answer(
+    action: Action,
+    *,
+    query_plan: QueryPlanArtifact | None = None,
+    real_explanation: object = None,
+) -> FinalAnswer:
+    from .result_explanation import ResultExplanationArtifact
+    real_expl = real_explanation if isinstance(real_explanation, ResultExplanationArtifact) else None
+
     if action.kind == "refuse":
         return FinalAnswer(
             content="I cannot proceed with a write or destructive database request in the current read-only mode.",
@@ -553,6 +588,8 @@ def _final_answer(action: Action, *, query_plan: QueryPlanArtifact | None = None
             next_action="Ask a read-only analysis question or request an explicit safe alternative.",
         )
     if action.kind == "ask_clarification":
+        if real_expl is not None and real_expl.status == "succeeded":
+            return _real_execution_answer(real_expl, query_plan)
         # 스키마 검사 후 쿼리 플랜이 생성됐으면 SQL 반환 (한글 쿼리 포함)
         if query_plan is not None and query_plan.status == "planned":
             return FinalAnswer(
@@ -566,6 +603,8 @@ def _final_answer(action: Action, *, query_plan: QueryPlanArtifact | None = None
             next_action="Inspect Oracle ADW schema context, then ask a clarification question if ambiguity remains.",
         )
     if action.kind == "inspect_schema":
+        if real_expl is not None and real_expl.status == "succeeded":
+            return _real_execution_answer(real_expl, query_plan)
         if query_plan is not None and query_plan.status == "planned":
             return FinalAnswer(
                 content=f"Query plan ready. Proposed SQL:\n{query_plan.proposed_sql}",
