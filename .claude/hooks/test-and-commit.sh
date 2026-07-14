@@ -2,7 +2,8 @@
 # Auto-test and commit hook: runs on PostToolUse Edit|Write for Python files.
 # Exit 0 = success (or skipped). Exit 2 = test failure (rewakes model).
 
-REPO=/Users/wylee/WorkspacesV2/AgentFromScratchAdvanced
+SCRIPT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
+REPO=${CLAUDE_PROJECT_DIR:-$(cd -- "$SCRIPT_DIR/../.." && pwd)}
 cd "$REPO" || exit 0
 
 # Only run for Python source files

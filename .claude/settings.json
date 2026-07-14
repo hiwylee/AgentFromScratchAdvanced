@@ -6,7 +6,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "/Users/wylee/WorkspacesV2/AgentFromScratchAdvanced/.claude/hooks/test-and-commit.sh",
+            "command": "\"${CLAUDE_PROJECT_DIR}\"/.claude/hooks/test-and-commit.sh",
             "timeout": 120,
             "statusMessage": "Running tests & auto-commit...",
             "asyncRewake": true
